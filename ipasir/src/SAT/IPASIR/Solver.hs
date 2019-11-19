@@ -12,8 +12,6 @@ import Data.Either (isRight)
 import Data.Proxy (Proxy(Proxy))
 import Data.Bifunctor (second,bimap)
 
-(💩) = (.) . (.)
-
 type Result solver = Either (Conflict solver) (Solution solver)
 
 data reduction 👈 solver = reduction :👈 solver
@@ -27,46 +25,62 @@ solution s encoding = unwrapmonadForNonIterative s $ do
     solve solver'
 -}
 
-class Solver solver where
-    type Encoding solver
-    type Solution solver
-    type Conflict solver
-    solution    :: Proxy solver -> Encoding solver -> Result solver
-    satisfiable :: Proxy solver -> Encoding solver -> Bool
-    satisfiable = isRight 💩 solution
+class ComplexityProblem cp where
+    type Encoding cp
+    type Solution cp
+    type Conflict cp
 
-class (Monad m, Solver solver) => IterativeSolver solver m | solver -> m where
+class (ComplexityProblem cp) => Solutiontransform cp where
+    solutionToEncoding    :: Proxy cp -> Solution cp -> Encoding cp
+    negSolutionToEncoding :: Proxy cp -> Solution cp -> Encoding cp
+
+class (ComplexityProblem cp) => Solver solver cp | solver -> cp where
+    solution    :: Proxy solver -> Encoding cp -> Result cp
+    satisfiable :: Proxy solver -> Encoding cp -> Bool
+    satisfiable s e = isRight $ solution s e
+
+class (Monad m, Solver solver cp) => IterativeSolver m solver cp | solver -> m where
     newIterativeSolver :: m solver
-    addEncoding        :: solver -> Encoding solver -> m solver
-    solve              :: solver -> m (Result solver)
+    addEncoding        :: solver -> Encoding cp -> m solver
+    solve              :: solver -> m (Result cp)
     unwrapmonadForNonIterative :: Proxy solver -> m a ->   a
     intercalateMonad           :: Proxy solver -> m a -> m a
 
-class (Solver solver) => Solutiontransform solver where
-    solutionToEncoding    :: Proxy solver -> Solution solver -> Encoding solver
-    negSolutionToEncoding :: Proxy solver -> Solution solver -> Encoding solver
-
-solveAll :: forall solver m. (IterativeSolver solver m, Solutiontransform solver)
-         => Proxy solver -> Encoding solver -> [Solution solver]
+solveAll :: forall m solver cp. (IterativeSolver m solver cp, Solutiontransform cp)
+         => Proxy solver -> Encoding cp -> [Solution cp]
 solveAll s encoding = unwrapmonadForNonIterative s $ do
     solver  <- newIterativeSolver :: m solver
     solver' <- addEncoding solver encoding
     looper solver'
   where
-    looper :: solver -> m [Solution solver]
+    looper :: solver -> m [Solution cp]
     looper solver = do
-        (res :: Result solver) <- solve solver
+        res <- solve solver :: m (Result cp)
         case res of
             Left  _        -> pure []
             Right solution -> do
-                solver' <- addEncoding solver $ negSolutionToEncoding (Proxy :: Proxy solver) solution
+                solver' <- addEncoding solver $ negSolutionToEncoding (Proxy :: Proxy cp) solution
                 sols <- intercalateMonad s $ looper solver'
                 pure $ solution : sols
 
-instance (Reduction r s) => Solver (r 👈 s) where
-    type Encoding (r 👈 s) = REncoding r
-    type Solution (r 👈 s) = RSolution r
-    type Conflict (r 👈 s) = RConflict r
+class (ComplexityProblem cp1, ComplexityProblem cp2) 
+      => Reduction reduction cp1 cp2 | reduction -> cp1, reduction -> cp2 where
+    newReduction  :: reduction
+    transEncoding :: reduction -> Encoding cp1 -> (Encoding cp2, reduction)
+    transSolution :: reduction -> Solution cp2 -> Solution cp1
+    transConflict :: reduction -> Conflict cp2 -> Conflict cp1
+
+instance (Reduction r1 cp1 cp2, Reduction r2 cp2 cp3)
+         => Reduction (r2 👈 r1) cp1 cp3 where
+    newReduction  = newReduction :👈 newReduction
+    transEncoding (r2 :👈 r1) e = (e'', r'' :👈 r')
+        where
+            (e' ,r' ) = transEncoding r1 e
+            (e'',r'') = transEncoding r2 e'
+    transSolution (r2 :👈 r1) = transSolution r1 . transSolution r2
+    transConflict (r2 :👈 r1) = transConflict r1 . transConflict r2
+
+instance (Reduction r cp1 cp2, Solver s cp2) => Solver (r 👈 s) cp1 where
     solution _ encoding = liftResult red $ solution (Proxy :: Proxy s) enc
       where
         (enc, red) = transEncoding (newReduction :: r) encoding
@@ -74,7 +88,7 @@ instance (Reduction r s) => Solver (r 👈 s) where
       where
         (enc, _) = transEncoding (newReduction :: r) encoding
 
-instance (IterativeSolver s m, Reduction r s) => IterativeSolver (r 👈 s) m where
+instance (Reduction r cp1 cp2, IterativeSolver m s cp2) => IterativeSolver m (r 👈 s) cp1 where
     newIterativeSolver = (:👈) newReduction <$> newIterativeSolver
     addEncoding (r :👈 s) encoding = do
         let (encoding', r')= transEncoding r encoding 
@@ -84,16 +98,5 @@ instance (IterativeSolver s m, Reduction r s) => IterativeSolver (r 👈 s) m wh
     unwrapmonadForNonIterative _ = unwrapmonadForNonIterative (Proxy :: Proxy s)
     intercalateMonad _           = intercalateMonad (Proxy :: Proxy s)
 
-liftResult :: Reduction reduction solver => reduction -> Result solver -> Result (reduction 👈 solver)
+liftResult :: Reduction reduction cp1 cp2 => reduction -> Result cp2 -> Result cp1
 liftResult reduction = bimap (transConflict reduction) (transSolution reduction) 
-
-class (Solver solver) => Reduction reduction solver | reduction -> solver where
-    type REncoding reduction
-    type RSolution reduction
-    type RConflict reduction
-
-    newReduction  :: reduction
-    transEncoding :: reduction -> REncoding reduction -> (Encoding solver, reduction)
-    transSolution :: reduction -> Solution solver -> RSolution reduction
-    transConflict :: reduction -> Conflict solver -> RConflict reduction
-
