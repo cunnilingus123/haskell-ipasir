@@ -16,12 +16,12 @@ import Data.Bifunctor (bimap)
 --   the complexity problem or a 'Conflict' if no solution exists.
 type Result cp = Either (Conflict cp) (Solution cp)
 
--- | (👈) represents a new solver (or reduction) using a 'Reduction'. The left side 
+-- | (👉) represents a new solver (or reduction) using a 'Reduction'. The left side 
 -- has to be an instance of 'Reduction' and the right side can either be a 'Solver', 
 -- 'IncrementalSolver' or a 'Reduction'.
-data reduction 👈 solver = reduction :👈 solver
-infixr 3 👈
-infixr 3 :👈
+data reduction 👉 solver = reduction :👉 solver
+infixr 3 👉
+infixr 3 :👉
 
 class ComplexityProblem cp where
     type Encoding cp
@@ -49,11 +49,12 @@ class (ComplexityProblem cp) => Solver solver cp | solver -> cp where
     -- for every 'IncrementalSolver'. Make sure your implementation satisfies
     -- that property.
     solution    :: Proxy solver -> Encoding cp -> Result cp
-    -- | Same as checking if the result of 'solution' is constructor 'Right'.
+    -- | Same as checking if the result of 'solution' is a 'Solution'.
     satisfiable :: Proxy solver -> Encoding cp -> Bool
     satisfiable s e = isRight $ solution s e
 
-class (Monad m, Solver solver cp) => IncrementalSolver m solver cp | solver -> m where
+class (Monad m, ComplexityProblem cp) 
+      => IncrementalSolver m solver cp | solver -> m, solver -> cp where
     -- | Creates a new empty 'IncrementalSolver'
     newIterativeSolver :: m solver
     -- | Adds contraints to the solver.
@@ -69,6 +70,12 @@ class (Monad m, Solver solver cp) => IncrementalSolver m solver cp | solver -> m
     -- the monad is "IO", you might want to set this function
     -- to 'System.IO.Unsafe.unsafeInterleaveIO'.
     intercalateMonad           :: Proxy solver -> m a -> m a
+
+instance (IncrementalSolver m solver cp, ComplexityProblem cp) => Solver solver cp where
+    solution s encoding = unwrapMonadForNonIterative s $ do
+        solver  <- newIterativeSolver :: m solver
+        solver' <- addEncoding solver encoding
+        solve solver'
 
 -- | Like 'solution' but gives back every possible 'Solution'. For a lazy list,
 -- you need to implement 'intercalateMonad' correctly. 
@@ -110,16 +117,16 @@ class (ComplexityProblem cp1, ComplexityProblem cp2)
     parseResult r = bimap (parseConflict r) (parseSolution r)
 
 instance (Reduction r1 cp1 cp2, Reduction r2 cp2 cp3)
-         => Reduction (r2 👈 r1) cp1 cp3 where
-    newReduction  = newReduction :👈 newReduction
-    parseEncoding (r2 :👈 r1) e = (e'', r'' :👈 r')
+         => Reduction (r2 👉 r1) cp1 cp3 where
+    newReduction  = newReduction :👉 newReduction
+    parseEncoding (r2 :👉 r1) e = (e'', r'' :👉 r')
         where
             (e' ,r' ) = parseEncoding r1 e
             (e'',r'') = parseEncoding r2 e'
-    parseSolution (r2 :👈 r1) = parseSolution r1 . parseSolution r2
-    parseConflict (r2 :👈 r1) = parseConflict r1 . parseConflict r2
+    parseSolution (r2 :👉 r1) = parseSolution r1 . parseSolution r2
+    parseConflict (r2 :👉 r1) = parseConflict r1 . parseConflict r2
 
-instance (Reduction r cp1 cp2, Solver s cp2) => Solver (r 👈 s) cp1 where
+instance (Reduction r cp1 cp2, Solver s cp2) => Solver (r 👉 s) cp1 where
     solution _ encoding = parseResult red $ solution (Proxy :: Proxy s) enc
         where
             (enc, red) = parseEncoding (newReduction :: r) encoding
@@ -128,12 +135,12 @@ instance (Reduction r cp1 cp2, Solver s cp2) => Solver (r 👈 s) cp1 where
             (enc, _) = parseEncoding (newReduction :: r) encoding
 
 instance (Reduction r cp1 cp2, IncrementalSolver m s cp2) 
-        => IncrementalSolver m (r 👈 s) cp1 where
-    newIterativeSolver = (:👈) newReduction <$> newIterativeSolver
-    addEncoding (r :👈 s) encoding = do
+        => IncrementalSolver m (r 👉 s) cp1 where
+    newIterativeSolver = (:👉) newReduction <$> newIterativeSolver
+    addEncoding (r :👉 s) encoding = do
         let (encoding', r') = parseEncoding r encoding 
         s' <- addEncoding s encoding'
-        return (r' :👈 s')
-    solve (r :👈 s) = parseResult r <$> solve s
+        return (r' :👉 s')
+    solve (r :👉 s) = parseResult r <$> solve s
     unwrapMonadForNonIterative _ = unwrapMonadForNonIterative (Proxy :: Proxy s)
     intercalateMonad _           = intercalateMonad (Proxy :: Proxy s)
