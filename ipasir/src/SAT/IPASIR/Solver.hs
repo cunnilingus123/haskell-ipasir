@@ -6,7 +6,17 @@
            , FlexibleInstances
 #-}
 
-module SAT.IPASIR.Solver where
+module SAT.IPASIR.Solver
+    ( type(👉)((:👉))
+    , Result
+    , ComplexityProblem(..)
+    , Solutiontransform(..)
+    , Solver(..)
+    , IncrementalSolver(..)
+    , incrementalSolution
+    , solveAll
+    , Reduction(..)
+    ) where
 
 import Data.Either (isRight)
 import Data.Proxy (Proxy(Proxy))
@@ -36,25 +46,16 @@ class (ComplexityProblem cp) => Solutiontransform cp where
     negSolutionToEncoding :: Proxy cp -> Solution cp -> Encoding cp
 
 class (ComplexityProblem cp) => Solver solver cp | solver -> cp where
-    -- | Calculates a model using the given solver. If the Haskell extension
-    -- [Intrinsic Superclasses](https://gitlab.haskell.org/ghc/ghc/wikis/intrinsic-superclasses)
-    -- have been available, I would have writen the 
-    -- standard implementation
+    -- | Calculates a model using the given solver. If the solver is a
+    --  'IncrementalSolver', you can use the standard implementation 
     -- 
-    -- > solution s encoding = unwrapMonadForNonIterative s $ do
-    -- >     solver  <- newIterativeSolver :: m solver
-    -- >     solver' <- addEncoding solver encoding
-    -- >     solve solver'
-    -- 
-    -- for every 'IncrementalSolver'. Make sure your implementation satisfies
-    -- that property.
+    -- > solution = incrementalSolution
     solution    :: Proxy solver -> Encoding cp -> Result cp
     -- | Same as checking if the result of 'solution' is a 'Solution'.
     satisfiable :: Proxy solver -> Encoding cp -> Bool
     satisfiable s e = isRight $ solution s e
 
-class (Monad m, ComplexityProblem cp) 
-      => IncrementalSolver m solver cp | solver -> m, solver -> cp where
+class (Monad m, Solver solver cp) => IncrementalSolver m solver cp | solver -> m where
     -- | Creates a new empty 'IncrementalSolver'
     newIterativeSolver :: m solver
     -- | Adds contraints to the solver.
@@ -69,13 +70,13 @@ class (Monad m, ComplexityProblem cp)
     -- does not compute lazy if this function is implemented by 'id'. If
     -- the monad is "IO", you might want to set this function
     -- to 'System.IO.Unsafe.unsafeInterleaveIO'.
-    intercalateMonad           :: Proxy solver -> m a -> m a
+    interleaveMonad           :: Proxy solver -> m a -> m a
 
-instance (IncrementalSolver m solver cp, ComplexityProblem cp) => Solver solver cp where
-    solution s encoding = unwrapMonadForNonIterative s $ do
-        solver  <- newIterativeSolver :: m solver
-        solver' <- addEncoding solver encoding
-        solve solver'
+incrementalSolution :: forall m solver cp. IncrementalSolver m solver cp => Proxy solver -> Encoding cp -> Result cp
+incrementalSolution s encoding = unwrapMonadForNonIterative s $ do
+    solver  <- newIterativeSolver :: m solver
+    solver' <- addEncoding solver encoding
+    solve solver'
 
 -- | Like 'solution' but gives back every possible 'Solution'. For a lazy list,
 -- you need to implement 'intercalateMonad' correctly. 
@@ -94,7 +95,7 @@ solveAll s encoding = unwrapMonadForNonIterative s $ do
             Right solution -> do
                 solver' <- addEncoding solver 
                                 $ negSolutionToEncoding (Proxy :: Proxy cp) solution
-                sols <- intercalateMonad s $ looper solver'
+                sols <- interleaveMonad s $ looper solver'
                 pure $ solution : sols
 
 -- | A reduction parses one 'ComplexityProblem' into another.
@@ -143,4 +144,4 @@ instance (Reduction r cp1 cp2, IncrementalSolver m s cp2)
         return (r' :👉 s')
     solve (r :👉 s) = parseResult r <$> solve s
     unwrapMonadForNonIterative _ = unwrapMonadForNonIterative (Proxy :: Proxy s)
-    intercalateMonad _           = intercalateMonad (Proxy :: Proxy s)
+    interleaveMonad _            = interleaveMonad (Proxy :: Proxy s)

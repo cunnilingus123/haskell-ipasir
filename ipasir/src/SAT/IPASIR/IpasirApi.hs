@@ -1,19 +1,28 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 module SAT.IPASIR.IpasirApi where
 
 import Foreign.C.Types (CInt)
-import Data.Vector (Vector)
-import qualified Data.Vector as Vec
+import Data.Array (Array, array)
+import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
+import Control.Monad ( forM_ )
+import Data.Ix (Ix(..))
+
+import SAT.IPASIR.Solver
+import SAT.IPASIR.ComplexityProblems (LBool(..))
+import qualified SAT.IPASIR.ComplexityProblems as CP
 
 type IDType  = Word
 type Var     = CInt
 
--- TODO: Put this LBool somewhere else.
-data LBool = LFalse | LUndef | LTrue deriving (Eq,Ord,Bounded)
-
-toMBool :: Ordering -> LBool
-toMBool LT = LTrue
-toMBool EQ = LUndef
-toMBool GT = LFalse
+instance Ix CInt where
+    range (from, to) = [from..to]
+    index (from, to) i
+      | inRange (from, to) i = fromEnum $ i - from
+      | otherwise            = error $ "Index out of bounds Exception. Index:" 
+                                        ++ show i ++ " Bounds: " ++ show (from,to)
+    inRange (from, to) i = i >= from && i <= to
 
 {-|
     Class that models the <https://github.com/biotomas/ipasir/blob/master/ipasir.h ipasir.h> interface.
@@ -103,13 +112,17 @@ class Ipasir a where
      * Required state: @SAT@
      * State after: @SAT@
     -}
-    ipasirSolution :: a -> Var -> IO (Vec.Vector LBool)
+    ipasirSolution :: a -> Var -> IO (Array Var LBool)
     ipasirSolution solver maxi = do
         let numberVars = succ $ fromEnum maxi
-        Vec.generateM numberVars $ toMBool <$$> compare 0 <$$> ipasirVal solver . toEnum
+        let sol = array (1,maxi) [ (var,toMBool <$> ipasirVal solver var) | var <- [1..maxi]]
+        sequence sol
+     --   Vec.generateM numberVars $ toMBool <$$> compare 0 <$$> ipasirVal solver . toEnum
         where
-            (<$$>) = fmap fmap fmap
-            infixr 1 <$$>
+            toMBool i = case compare i 0 of
+                LT -> LFalse
+                EQ -> LUndef
+                GT -> LTrue
     
     {-|
      Check if the given assumption literal was used to prove the
@@ -171,15 +184,27 @@ byIpasirAdd :: (a -> Var -> IO ()) -> a -> [Var] -> IO ()
 byIpasirAdd ipasirAdd solver l = do
     ipasirAdd solver `mapM` l
     ipasirAdd solver 0
-{-}
-data IpasirSolverProbs i = IpasirSolverProbs i Int IpasirState
-data IpasirState = INPUT | SAT | UNSAT
 
-newtype IpasirSolver i = IpasirSolver (StateT Int IO) 
+data IpasirSolver i = IpasirSolver i Var
 
-instance (Ipasir i) => Solver (IpasirSolver i) where
+type IpasirCP = CP.SAT Var CP.LBool
 
-instance (Ipasir i) => IncrementalSolver (StateT Int IO) IpasirSolver i Bla where
-    solution = undefined
+instance (Ipasir i) => Solver (IpasirSolver i) IpasirCP where
+    solution = incrementalSolution
 
--}
+instance (Ipasir i) => IncrementalSolver IO (IpasirSolver i) IpasirCP where
+    newIterativeSolver = (`IpasirSolver` 0) <$> ipasirInit
+    addEncoding (IpasirSolver ip maxVar) sat = do
+        let m = (maximum . maximum) $ (map . map) abs sat
+        forM_ sat $ ipasirAddClause ip
+        return $ IpasirSolver ip $ max m maxVar
+    solve (IpasirSolver ip maxVar) = do
+        b <- ipasirSolve ip
+        case b of
+            LFalse -> Left <$> ipasirConflict ip maxVar 
+            LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
+                              "It can happen if you terminate the solver by using " ++
+                              "ipasir_set_terminate (see ipasir.h)\n" 
+            LTrue  -> Right <$> ipasirSolution ip maxVar
+    unwrapMonadForNonIterative _  = unsafePerformIO
+    interleaveMonad _ = unsafeInterleaveIO
