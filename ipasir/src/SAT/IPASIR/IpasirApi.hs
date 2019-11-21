@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 
@@ -103,11 +104,16 @@ class Ipasir a where
     ipasirVal:: a -> Var -> IO Var
     
     {-|
-     ipasirSolution gives you a Vector with a 'LUndef' at position 0 and the truth values on
-     every other position. The offset makes the following property true:
+     ipasirSolution gives you an 'Array' with the truth value of variable @var@ 
+     at index @var@. Stat means @ipasirSolution@ will make the following function
+     returning 'True':
      
-     @
-        ipasirSolution' s ! i == ipasirVal' s (toEnum i) -- ignored the IO-monad     @
+      > f s v = do
+      >   solution <- ipasirSolution s v
+      >   varAt <- ipasirVal s v
+      >   return $ solution ! v == varAt
+
+     The second parameter has to indicate the highest variable the SAT solver knows.
 
      * Required state: @SAT@
      * State after: @SAT@
@@ -189,10 +195,12 @@ data IpasirSolver i = IpasirSolver i Var
 
 type IpasirCP = CP.SAT Var CP.LBool
 
-instance (Ipasir i) => Solver (IpasirSolver i) IpasirCP where
+instance (Ipasir i) => Solver (IpasirSolver i) where
+    type CPS (IpasirSolver i) = IpasirCP
     solution = incrementalSolution
 
-instance (Ipasir i) => IncrementalSolver IO (IpasirSolver i) IpasirCP where
+instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
+    type MonadIS (IpasirSolver i) = IO
     newIterativeSolver = (`IpasirSolver` 0) <$> ipasirInit
     addEncoding (IpasirSolver ip maxVar) sat = do
         let m = (maximum . maximum) $ (map . map) abs sat

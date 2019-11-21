@@ -20,7 +20,9 @@ instance (Enum e) => ComplexityProblem (SAT e b) where
     type Solution (SAT e b) = Array e b
     type Conflict (SAT e b) = [e]
 
-instance (Enum e, Enum i, Ord e) => Reduction (SATRedEnum e i b) (SAT e b) (SAT i b) where
+instance (Enum e, Enum i, Ord e) => Reduction (SATRedEnum e i b) where
+    type CPFrom (SATRedEnum e i b) = SAT e b
+    type CPTo   (SATRedEnum e i b) = SAT i b
     newReduction = SATRedEnum
     parseEncoding _ encoding = ((map . map) parseEnum encoding, SATRedEnum)
         where
