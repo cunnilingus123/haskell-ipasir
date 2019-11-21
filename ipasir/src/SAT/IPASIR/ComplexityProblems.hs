@@ -1,3 +1,4 @@
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 module SAT.IPASIR.ComplexityProblems where
@@ -6,8 +7,8 @@ import SAT.IPASIR.Solver
 import Data.Map (Map)
 import Data.Bifunctor (bimap)
 import Data.Array (Array, ixmap, bounds)
+import Data.Ix (Ix(..))
 
--- | Some Solver give 
 data LBool = LFalse | LUndef | LTrue
     deriving (Show, Eq, Ord)
 
@@ -20,16 +21,16 @@ instance (Enum e) => ComplexityProblem (SAT e b) where
     type Solution (SAT e b) = Array e b
     type Conflict (SAT e b) = [e]
 
-instance (Enum e, Enum i, Ord e) => Reduction (SATRedEnum e i b) where
+instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
     type CPFrom (SATRedEnum e i b) = SAT e b
     type CPTo   (SATRedEnum e i b) = SAT i b
     newReduction = SATRedEnum
     parseEncoding _ encoding = ((map . map) parseEnum encoding, SATRedEnum)
+    parseConflict _ = map parseEnum
+    parseSolution _ = mapIndex parseEnum
         where
-         --   parseEnum :: e -> i
-            parseEnum = toEnum . fromEnum
-    parseResult _ = bimap (map parseEnum) undefined-- (mapIndex parseEnum)
-        where
-         --   parseEnum :: i -> e
-            parseEnum = toEnum . fromEnum
-            mapIndex f arr = ixmap (bounds arr) f arr
+            mapIndex :: (Ix e, Enum e, Ix i, Enum i) => (e -> i) -> Array i a -> Array e a
+            mapIndex f arr = ixmap (bimap parseEnum parseEnum (bounds arr)) f arr
+
+parseEnum :: (Enum a, Enum b) => a -> b
+parseEnum = toEnum . fromEnum
