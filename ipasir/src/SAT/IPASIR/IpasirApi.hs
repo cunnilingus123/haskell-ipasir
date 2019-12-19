@@ -4,15 +4,15 @@
 
 module SAT.IPASIR.IpasirApi where
 
-import Foreign.C.Types (CInt)
 import Data.Array (Array, array)
-import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
-import Control.Monad ( forM_ )
 import Data.Ix (Ix(..))
+import Foreign.C.Types (CInt)
+import Control.Monad (forM_)
+import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
 
 import SAT.IPASIR.Solver
-import SAT.IPASIR.ComplexityProblems (LBool(..))
-import qualified SAT.IPASIR.ComplexityProblems as CP
+import SAT.IPASIR.ComplexityProblem (LBool(..))
+import qualified SAT.IPASIR.ComplexityProblem as CP
 
 type IDType  = Word
 type Var     = CInt
@@ -77,7 +77,7 @@ class Ipasir a where
      * Required state: @INPUT@ or @SAT@ or @UNSAT@
      * State after: @INPUT@
     -}
-    ipasirAssume :: a -> Int -> IO ()
+    ipasirAssume :: a -> Var -> IO ()
 
     {-|
      Solve the formula with specified clauses under the specified assumptions.
@@ -123,12 +123,11 @@ class Ipasir a where
         let numberVars = succ $ fromEnum maxi
         let sol = array (1,maxi) [ (var,toMBool <$> ipasirVal solver var) | var <- [1..maxi]]
         sequence sol
-     --   Vec.generateM numberVars $ toMBool <$$> compare 0 <$$> ipasirVal solver . toEnum
         where
             toMBool i = case compare i 0 of
                 LT -> LFalse
                 EQ -> LUndef
-                GT -> LTrue
+                _  -> LTrue
     
     {-|
      Check if the given assumption literal was used to prove the
