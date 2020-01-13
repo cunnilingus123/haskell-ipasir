@@ -41,6 +41,7 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     addEncoding        :: s -> Encoding (CPS s) -> MonadIS s s
     -- | Starts the solving process and gives back the result. See 'Result'.
     solve              :: s -> MonadIS s (Result (CPS s))
+    assume             :: s -> Assumption (CPS s) -> MonadIS s ()
     -- | If the monad is "IO" you might want to implement this
     --   function by 'System.IO.Unsafe.unsafePerformIO' or 
     --   'System.IO.Unsafe.unsafeDupablePerformIO'.
@@ -99,5 +100,6 @@ instance (Reduction r, IncrementalSolver s, CPS s ~ CPTo r)
         s' <- addEncoding s encoding'
         return (r' :👉 s')
     solve (r :👉 s) = parseResult r <$> solve s
+    assume (r :👉 s) ass = assume s `mapM_` parseAssumption r ass
     unwrapMonadForNonIterative _ = unwrapMonadForNonIterative (Proxy :: Proxy s)
     interleaveMonad _            = interleaveMonad (Proxy :: Proxy s)

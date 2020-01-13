@@ -101,7 +101,7 @@ class Ipasir a where
      * Required state: @SAT@
      * State after: @SAT@
     -}
-    ipasirVal:: a -> Var -> IO Var
+    ipasirVal :: a -> Var -> IO Var
     
     {-|
      ipasirSolution gives you an 'Array' with the truth value of variable @var@ 
@@ -190,8 +190,10 @@ byIpasirAdd ipasirAdd solver l = do
     ipasirAdd solver `mapM` l
     ipasirAdd solver 0
 
+-- | This datatype makes an instance of 'Ipasir' to an instance of 'IncrementalSolver'.
 data IpasirSolver i = IpasirSolver i Var
 
+-- | The complexity problem of an instance of Ipasir' is always 'CP.SAT' 'CInt' 'CP.LBool'
 type IpasirCP = CP.SAT Var CP.LBool
 
 instance (Ipasir i) => Solver (IpasirSolver i) where
@@ -210,8 +212,9 @@ instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
         case b of
             LFalse -> Left <$> ipasirConflict ip maxVar 
             LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
-                              "It can happen if you terminate the solver by using " ++
+                              "This can happen if you terminate the solver by using " ++
                               "ipasir_set_terminate (see ipasir.h)\n" 
             LTrue  -> Right <$> ipasirSolution ip maxVar
+    assume (IpasirSolver ip _) = ipasirAssume ip
     unwrapMonadForNonIterative _  = unsafePerformIO
     interleaveMonad _ = unsafeInterleaveIO

@@ -13,11 +13,13 @@ import Data.Bifunctor (bimap)
 import Data.Array (Array, ixmap, bounds)
 import Data.Ix (Ix(..))
 import Data.Proxy (Proxy(Proxy))
+import Control.Monad ((<=<))
 
 class ComplexityProblem cp where
     type Encoding cp
     type Solution cp
     type Conflict cp
+    type Assumption cp
 
 -- | Every 'Solver' returns either a 'Solution' (also called model or proof)
 --   for the complexity problem or a 'Conflict' if no solution exists.
@@ -44,7 +46,7 @@ class (ComplexityProblem cp) => Solutiontransform cp where
 class (ComplexityProblem (CPFrom r), ComplexityProblem (CPTo r)) => Reduction r where
 
     {-# MINIMAL newReduction, parseEncoding, 
-        (parseSolution, parseConflict | parseResult) #-}
+        (parseSolution, parseConflict | parseResult), parseAssumption #-}
 
     type CPFrom r
     type CPTo   r
@@ -54,17 +56,19 @@ class (ComplexityProblem (CPFrom r), ComplexityProblem (CPTo r)) => Reduction r 
     newReduction  :: r
     -- | Parses an 'Encoding'. Notice, that the returned new reduction needs 
     --   to remember some renaming details like variablenames to parse a 
-    --   'Solution' or a 'Conflict' back.  
+    --   'Solution' or a 'Conflict' back. 
     parseEncoding :: r -> Encoding (CPFrom r) -> (Encoding (CPTo r), r)
-    -- | Parses a 'Solution' of a 'Solver' back.
+    -- | Parses a 'Solution' of a 'ComplexityProblem' back.
     parseSolution :: r -> Solution (CPTo r) -> Solution (CPFrom r)
-    parseSolution r s = case parseResult r $ Right s of Right s' -> s'
-    -- | Parses a 'Conflict' of a 'Solver' back.
+    parseSolution r s = case parseResult r (Right s) of Right s' -> s'
+    -- | Parses a 'Conflict' of a 'ComplexityProblem' back.
     parseConflict :: r -> Conflict (CPTo r) -> Conflict (CPFrom r)
-    parseConflict r c = case parseResult r $ Left  c of Left  c' -> c'
-    -- | Parses a 'Result' of a 'Solver' back.
+    parseConflict r c = case parseResult r (Left  c) of Left  c' -> c'
+    -- | Parses a 'Result' of a 'ComplexityProblem' back.
     parseResult   :: r -> Result   (CPTo r) -> Result (CPFrom r)
     parseResult r = bimap (parseConflict r) (parseSolution r)
+    -- | Parses the 'Assumption' into an equivalent sequence of other assumptions.
+    parseAssumption :: r -> Assumption (CPFrom r) -> [Assumption (CPTo r)]
 
 instance (Reduction r1, Reduction r2, CPFrom r2 ~ CPTo r1) => Reduction (r2 👉 r1) where
     type CPFrom (r2 👉 r1) = CPFrom r1
@@ -76,20 +80,30 @@ instance (Reduction r1, Reduction r2, CPFrom r2 ~ CPTo r1) => Reduction (r2 👉
             (e'',r'') = parseEncoding r2 e'
     parseSolution (r2 :👉 r1) = parseSolution r1 . parseSolution r2
     parseConflict (r2 :👉 r1) = parseConflict r1 . parseConflict r2
+    parseAssumption (r2 :👉 r1) = parseAssumption r2 <=< parseAssumption r1
 
 data LBool = LFalse | LUndef | LTrue
     deriving (Show, Eq, Ord)
 
+-- | The a representative of the 
+--   [SAT-Problem](https://en.wikipedia.org/wiki/Boolean_satisfiability_problem)
+--   with variables of type e (will be an 'Enum' and 'Ix').
+--   The 'Solution' is expressed using b (either 'Bool' or 'LBool').
 data SAT e b = SAT
 
+-- | This reduction changes the 'Enum' representing the variables of the 
+--   SAT-formula.
 data SATRedEnum e i b = SATRedEnum
 
+-- | This reduction changes the Boolean type from 'LBool' to 'Bool'.
+--   Undefined Variables are set to 'False'.
 data SATRedLBoolBool e = SATRedLBoolBool
 
 instance (Enum e) => ComplexityProblem (SAT e b) where
     type Encoding (SAT e b) = [[e]]
     type Solution (SAT e b) = Array e b
     type Conflict (SAT e b) = [e]
+    type Assumption (SAT e b) = e
 
 instance (Enum e) => Reduction (SATRedLBoolBool e) where
     type CPFrom (SATRedLBoolBool e) = SAT e LBool
@@ -98,6 +112,7 @@ instance (Enum e) => Reduction (SATRedLBoolBool e) where
     parseEncoding _ = (, SATRedLBoolBool)
     parseConflict _ = id
     parseSolution _ = fmap boolToLBool
+    parseAssumption _ = pure
 
 boolToLBool True = LTrue
 boolToLBool _    = LFalse
@@ -112,6 +127,7 @@ instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
         where
             mapIndex :: (Ix e, Enum e, Ix i, Enum i) => (e -> i) -> Array i a -> Array e a
             mapIndex f arr = ixmap (bimap parseEnum parseEnum (bounds arr)) f arr
+    parseAssumption _ = pure . parseEnum
 
 parseEnum :: (Enum a, Enum b) => a -> b
 parseEnum = toEnum . fromEnum
