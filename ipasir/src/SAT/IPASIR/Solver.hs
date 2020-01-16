@@ -17,6 +17,7 @@ module SAT.IPASIR.Solver
     ) where
 
 import Data.Either (isRight)
+import Data.Bifunctor (bimap)
 import Data.Proxy (Proxy(Proxy))
 
 import SAT.IPASIR.ComplexityProblem
@@ -52,6 +53,9 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     --   you might want to set this function to
     --   'System.IO.Unsafe.unsafeInterleaveIO'.
     interleaveMonad            :: Proxy s -> MonadIS s a -> MonadIS s a
+
+class (IncrementalSolver s, SolutionParts (CPS s)) => PartSolver s where
+    solvePart :: (m ~ MonadIS s, cp ~ CPS s) => s -> m (ResultSol (CPS s) (Part cp -> m (SolutionPart cp)))
 
 -- | If you want to instantiate 'Solver' you can use this 
 --   function as a standard implementation for 'solution'.
@@ -103,3 +107,13 @@ instance (Reduction r, IncrementalSolver s, CPS s ~ CPTo r)
     assume (r :👉 s) ass = assume s `mapM_` parseAssumption r ass
     unwrapMonadForNonIterative _ = unwrapMonadForNonIterative (Proxy :: Proxy s)
     interleaveMonad _            = interleaveMonad (Proxy :: Proxy s)
+
+instance (SPReduction r, PartSolver s, CPS s ~ CPTo r) 
+          => PartSolver (r 👉 s) where
+    solvePart (r :👉 s) = bimap parseCon parseSol <$> solvePart s
+      where
+        parseCon :: Conflict (CPTo r) -> Conflict (CPFrom r)
+        parseCon = parseConflict r
+        parseSol :: (Part (CPTo   r) -> MonadIS s (SolutionPart (CPTo   r))) 
+                 ->  Part (CPFrom r) -> MonadIS s (SolutionPart (CPFrom r))
+        parseSol s p = parseSolutionPart r <$> s (parsePart r p)

@@ -8,9 +8,10 @@
 
 module SAT.IPASIR.ComplexityProblem where
 
-import Data.Map (Map)
+import Data.Map (Map, fromList, mapKeys)
+import qualified Data.Map as M
 import Data.Bifunctor (bimap)
-import Data.Array (Array, ixmap, bounds)
+import Data.Array (Array, (!), ixmap, bounds)
 import Data.Ix (Ix(..))
 import Data.Proxy (Proxy(Proxy))
 import Control.Monad ((<=<))
@@ -21,9 +22,17 @@ class ComplexityProblem cp where
     type Conflict cp
     type Assumption cp
 
+class (ComplexityProblem cp) => SolutionParts cp where
+    type Part cp
+    type SolutionPart cp
+    shrinkSolution :: Proxy cp -> Part cp -> Solution cp -> SolutionPart cp
+
 -- | Every 'Solver' returns either a 'Solution' (also called model or proof)
 --   for the complexity problem or a 'Conflict' if no solution exists.
 type Result cp = Either (Conflict cp) (Solution cp)
+
+-- | TODO: Explain
+type ResultSol cp sol = Either (Conflict cp) sol
 
 -- | (👉) represents a new solver (or reduction) using a 'Reduction'.
 --   The left side has to be an instance of 'Reduction' and the right 
@@ -82,6 +91,14 @@ instance (Reduction r1, Reduction r2, CPFrom r2 ~ CPTo r1) => Reduction (r2 👉
     parseConflict (r2 :👉 r1) = parseConflict r1 . parseConflict r2
     parseAssumption (r2 :👉 r1) = parseAssumption r2 <=< parseAssumption r1
 
+class (SolutionParts (CPFrom r), SolutionParts (CPTo r), Reduction r) => SPReduction r where
+    parsePart         :: r -> Part (CPFrom r)       -> Part (CPTo r)
+    parseSolutionPart :: r -> SolutionPart (CPTo r) -> SolutionPart (CPFrom r)
+
+instance (SPReduction r1, SPReduction r2, CPFrom r2 ~ CPTo r1) => SPReduction (r2 👉 r1) where
+    parsePart (r2 :👉 r1) = parsePart r2 . parsePart r1
+    parseSolutionPart (r2 :👉 r1) = parseSolutionPart r1 . parseSolutionPart r2
+
 data LBool = LFalse | LUndef | LTrue
     deriving (Show, Eq, Ord)
 
@@ -99,13 +116,18 @@ data SATRedEnum e i b = SATRedEnum
 --   Undefined Variables are set to 'False'.
 data SATRedLBoolBool e = SATRedLBoolBool
 
-instance (Enum e) => ComplexityProblem (SAT e b) where
+instance (Enum e, Ix e) => ComplexityProblem (SAT e b) where
     type Encoding (SAT e b) = [[e]]
     type Solution (SAT e b) = Array e b
     type Conflict (SAT e b) = [e]
     type Assumption (SAT e b) = e
 
-instance (Enum e) => Reduction (SATRedLBoolBool e) where
+instance (Enum e, Ix e) => SolutionParts (SAT e b) where
+    type Part (SAT e b) = [e]
+    type SolutionPart (SAT e b) = Map e b
+    shrinkSolution _ part solution = fromList $ (\i -> (i,solution ! i)) <$> part
+
+instance (Enum e, Ix e) => Reduction (SATRedLBoolBool e) where
     type CPFrom (SATRedLBoolBool e) = SAT e LBool
     type CPTo   (SATRedLBoolBool e) = SAT e Bool
     newReduction = SATRedLBoolBool
@@ -113,6 +135,10 @@ instance (Enum e) => Reduction (SATRedLBoolBool e) where
     parseConflict _ = id
     parseSolution _ = fmap boolToLBool
     parseAssumption _ = pure
+
+instance (Enum e, Ix e) => SPReduction (SATRedLBoolBool e) where
+    parsePart _ = id
+    parseSolutionPart _ = M.map boolToLBool
 
 boolToLBool True = LTrue
 boolToLBool _    = LFalse
@@ -128,6 +154,10 @@ instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
             mapIndex :: (Ix e, Enum e, Ix i, Enum i) => (e -> i) -> Array i a -> Array e a
             mapIndex f arr = ixmap (bimap parseEnum parseEnum (bounds arr)) f arr
     parseAssumption _ = pure . parseEnum
+
+instance (Enum e, Enum i, Ix e, Ix i) => SPReduction (SATRedEnum e i b) where
+    parsePart _ = map parseEnum
+    parseSolutionPart _ = mapKeys parseEnum
 
 parseEnum :: (Enum a, Enum b) => a -> b
 parseEnum = toEnum . fromEnum
