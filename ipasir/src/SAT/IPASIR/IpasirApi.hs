@@ -1,6 +1,4 @@
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
 
 module SAT.IPASIR.IpasirApi where
 
@@ -11,7 +9,7 @@ import Control.Monad (forM_)
 import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
 
 import SAT.IPASIR.Solver
-import SAT.IPASIR.ComplexityProblem (LBool(..))
+import SAT.IPASIR.ComplexityProblem (LBool(..), enumToLBool)
 import qualified SAT.IPASIR.ComplexityProblem as CP
 
 type IDType  = Word
@@ -207,14 +205,19 @@ instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
         let m = (maximum . maximum) $ (map . map) abs sat
         forM_ sat $ ipasirAddClause ip
         return $ IpasirSolver ip $ max m maxVar
-    solve (IpasirSolver ip maxVar) = do
-        b <- ipasirSolve ip
-        case b of
-            LFalse -> Left <$> ipasirConflict ip maxVar 
-            LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
-                              "This can happen if you terminate the solver by using " ++
-                              "ipasir_set_terminate (see ipasir.h)\n" 
-            LTrue  -> Right <$> ipasirSolution ip maxVar
+    solve = solving $ \ip maxVar -> ipasirSolution ip maxVar
     assume (IpasirSolver ip _) = ipasirAssume ip
     unwrapMonadForNonIterative _  = unsafePerformIO
     interleaveMonad _ = unsafeInterleaveIO
+
+instance (Ipasir i) => PartSolver (IpasirSolver i) where
+    solvePart = solving $ \ip _ -> return (fmap enumToLBool . ipasirVal ip)
+
+solving satCase (IpasirSolver ip maxVar) = do
+    b <- ipasirSolve ip
+    case b of
+        LFalse -> Left <$> ipasirConflict ip maxVar 
+        LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
+                          "This can happen if you terminate the solver by using " ++
+                          "ipasir_set_terminate (see ipasir.h)\n" 
+        LTrue  -> Right <$> satCase ip maxVar

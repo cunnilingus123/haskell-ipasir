@@ -1,20 +1,9 @@
-{-# LANGUAGE TypeFamilies
-           , ScopedTypeVariables
-           , TypeOperators
-           , FlexibleInstances
-           , FlexibleContexts
-#-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
 
-module SAT.IPASIR.Solver
-    ( Result
-    , ComplexityProblem(..)
-    , Solutiontransform(..)
-    , Solver(..)
-    , IncrementalSolver(..)
-    , incrementalSolution
-    , solveAll
-    , Reduction(..)
-    ) where
+module SAT.IPASIR.Solver where
 
 import Data.Either (isRight)
 import Data.Bifunctor (bimap)
@@ -116,4 +105,4 @@ instance (SPReduction r, PartSolver s, CPS s ~ CPTo r)
         parseCon = parseConflict r
         parseSol :: (Part (CPTo   r) -> MonadIS s (SolutionPart (CPTo   r))) 
                  ->  Part (CPFrom r) -> MonadIS s (SolutionPart (CPFrom r))
-        parseSol s p = parseSolutionPart r <$> s (parsePart r p)
+        parseSol = parseSolutionPart r

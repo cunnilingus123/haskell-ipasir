@@ -1,10 +1,8 @@
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
 
 module SAT.IPASIR.ComplexityProblem where
 
@@ -22,6 +20,14 @@ class ComplexityProblem cp where
     type Conflict cp
     type Assumption cp
 
+-- | TODO: Die Namen sind noch doof.
+--   Used for the type class 'SAT.IPASIR.Solver.PartSolver'.
+--   Complexity classes which can split the 'Solution' into 
+--   parts can offer more speed on generating the solution if
+--   you do not want to know all the values.
+--
+--   This does not affect the speed of the solving process itself
+--   but reduces the communication with the solver.
 class (ComplexityProblem cp) => SolutionParts cp where
     type Part cp
     type SolutionPart cp
@@ -32,12 +38,13 @@ class (ComplexityProblem cp) => SolutionParts cp where
 type Result cp = Either (Conflict cp) (Solution cp)
 
 -- | TODO: Explain
-type ResultSol cp sol = Either (Conflict cp) sol
+type ResultSol cp solution = Either (Conflict cp) solution
 
 -- | (👉) represents a new solver (or reduction) using a 'Reduction'.
---   The left side has to be an instance of 'Reduction' and the right 
---   side can either be a 'Solver', 'IncrementalSolver' or a 'Reduction'.
-data reduction 👉 solver = reduction :👉 solver
+--   If the left side 'r' is a 'Reduction' and the right side 's' is a 
+-- 'SAT.IPASIR.Solver.Solver', an 'SAT.IPASIR.Solver.IncrementalSolver' or
+-- 'Reduction', then 'r 👉 s' fullfills the same constraints like 's'.
+data r 👉 s = r :👉 s
 infixr 3 👉
 infixr 3 :👉
 
@@ -92,15 +99,27 @@ instance (Reduction r1, Reduction r2, CPFrom r2 ~ CPTo r1) => Reduction (r2 👉
     parseAssumption (r2 :👉 r1) = parseAssumption r2 <=< parseAssumption r1
 
 class (SolutionParts (CPFrom r), SolutionParts (CPTo r), Reduction r) => SPReduction r where
-    parsePart         :: r -> Part (CPFrom r)       -> Part (CPTo r)
-    parseSolutionPart :: r -> SolutionPart (CPTo r) -> SolutionPart (CPFrom r)
+    parseSolutionPart :: forall f. Functor f =>
+                         r -> (Part (CPTo   r) -> f (SolutionPart (CPTo   r))) 
+                           -> (Part (CPFrom r) -> f (SolutionPart (CPFrom r)))
 
 instance (SPReduction r1, SPReduction r2, CPFrom r2 ~ CPTo r1) => SPReduction (r2 👉 r1) where
-    parsePart (r2 :👉 r1) = parsePart r2 . parsePart r1
     parseSolutionPart (r2 :👉 r1) = parseSolutionPart r1 . parseSolutionPart r2
 
 data LBool = LFalse | LUndef | LTrue
     deriving (Show, Eq, Ord)
+
+instance Enum LBool where
+    toEnum = enumToLBool
+    fromEnum LTrue  =  1
+    fromEnum LUndef =  0
+    fromEnum _      = -1
+
+enumToLBool i = case compare i 0 of
+    GT -> LTrue
+    EQ -> LUndef
+    _  -> LFalse
+
 
 -- | The a representative of the 
 --   [SAT-Problem](https://en.wikipedia.org/wiki/Boolean_satisfiability_problem)
@@ -123,9 +142,9 @@ instance (Enum e, Ix e) => ComplexityProblem (SAT e b) where
     type Assumption (SAT e b) = e
 
 instance (Enum e, Ix e) => SolutionParts (SAT e b) where
-    type Part (SAT e b) = [e]
-    type SolutionPart (SAT e b) = Map e b
-    shrinkSolution _ part solution = fromList $ (\i -> (i,solution ! i)) <$> part
+    type Part (SAT e b) = e
+    type SolutionPart (SAT e b) = b
+    shrinkSolution _ part solution = solution ! part
 
 instance (Enum e, Ix e) => Reduction (SATRedLBoolBool e) where
     type CPFrom (SATRedLBoolBool e) = SAT e LBool
@@ -137,8 +156,7 @@ instance (Enum e, Ix e) => Reduction (SATRedLBoolBool e) where
     parseAssumption _ = pure
 
 instance (Enum e, Ix e) => SPReduction (SATRedLBoolBool e) where
-    parsePart _ = id
-    parseSolutionPart _ = M.map boolToLBool
+    parseSolutionPart _ f e = boolToLBool <$> f e
 
 boolToLBool True = LTrue
 boolToLBool _    = LFalse
@@ -156,8 +174,7 @@ instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
     parseAssumption _ = pure . parseEnum
 
 instance (Enum e, Enum i, Ix e, Ix i) => SPReduction (SATRedEnum e i b) where
-    parsePart _ = map parseEnum
-    parseSolutionPart _ = mapKeys parseEnum
+    parseSolutionPart _ f = f . parseEnum 
 
 parseEnum :: (Enum a, Enum b) => a -> b
 parseEnum = toEnum . fromEnum
