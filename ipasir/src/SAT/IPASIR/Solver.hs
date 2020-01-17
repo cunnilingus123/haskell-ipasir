@@ -44,7 +44,8 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     interleaveMonad            :: Proxy s -> MonadIS s a -> MonadIS s a
 
 class (IncrementalSolver s, SolutionParts (CPS s)) => PartSolver s where
-    solvePart :: (m ~ MonadIS s, cp ~ CPS s) => s -> m (ResultSol (CPS s) (Part cp -> m (SolutionPart cp)))
+    solvePart :: (m ~ MonadIS s, cp ~ CPS s) 
+              => s -> m (ResultSol (CPS s) (Part cp -> m (SolutionPart cp)))
 
 -- | If you want to instantiate 'Solver' you can use this 
 --   function as a standard implementation for 'solution'.
@@ -71,7 +72,7 @@ solveAll s encoding = unwrapMonadForNonIterative s $ do
             Left  _        -> pure []
             Right solution -> do
                 solver' <- addEncoding solver 
-                                $ negSolutionToEncoding (Proxy :: Proxy (CPS s)) solution
+                            $ negSolutionToEncoding (Proxy :: Proxy (CPS s)) solution
                 sols <- interleaveMonad s $ looper solver'
                 pure $ solution : sols
 
@@ -99,10 +100,4 @@ instance (Reduction r, IncrementalSolver s, CPS s ~ CPTo r)
 
 instance (SPReduction r, PartSolver s, CPS s ~ CPTo r) 
           => PartSolver (r 👉 s) where
-    solvePart (r :👉 s) = bimap parseCon parseSol <$> solvePart s
-      where
-        parseCon :: Conflict (CPTo r) -> Conflict (CPFrom r)
-        parseCon = parseConflict r
-        parseSol :: (Part (CPTo   r) -> MonadIS s (SolutionPart (CPTo   r))) 
-                 ->  Part (CPFrom r) -> MonadIS s (SolutionPart (CPFrom r))
-        parseSol = parseSolutionPart r
+    solvePart (r :👉 s) = bimap (parseConflict r) (parseSolutionPart r) <$> solvePart s

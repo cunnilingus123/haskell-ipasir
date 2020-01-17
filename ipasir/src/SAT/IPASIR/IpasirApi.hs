@@ -103,7 +103,7 @@ class Ipasir a where
     
     {-|
      ipasirSolution gives you an 'Array' with the truth value of variable @var@ 
-     at index @var@. Stat means @ipasirSolution@ will make the following function
+     at index @var@. That means @ipasirSolution@ will make the following function
      returning 'True':
      
       > f s v = do
@@ -119,13 +119,8 @@ class Ipasir a where
     ipasirSolution :: a -> Var -> IO (Array Var LBool)
     ipasirSolution solver maxi = do
         let numberVars = succ $ fromEnum maxi
-        let sol = array (1,maxi) [ (var,toMBool <$> ipasirVal solver var) | var <- [1..maxi]]
+        let sol = array (1,maxi) [ (var, enumToLBool <$> ipasirVal solver var) | var <- [1..maxi]]
         sequence sol
-        where
-            toMBool i = case compare i 0 of
-                LT -> LFalse
-                EQ -> LUndef
-                _  -> LTrue
     
     {-|
      Check if the given assumption literal was used to prove the
