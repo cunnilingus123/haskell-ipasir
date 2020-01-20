@@ -7,9 +7,8 @@ module SAT.IPASIR.ComplexityProblem where
 
 import Data.Proxy (Proxy(Proxy))
 import Data.Bifunctor (bimap)
-import Data.Either (fromLeft, fromRight)
 import Control.Monad ((<=<))
-import Control.Arrow ((|||))
+import Data.Either (fromLeft, fromRight)
 
 class ComplexityProblem cp where
     type Encoding cp
@@ -56,14 +55,14 @@ class (ComplexityProblem (CPFrom r), ComplexityProblem (CPTo r)) => Reduction r 
     --   'Solution' or a 'Conflict' back. 
     parseEncoding :: r -> Encoding (CPFrom r) -> (Encoding (CPTo r), r)
     -- | Parses a 'Solution' of a 'ComplexityProblem' back.
-    parseSolution :: Monad m => r -> Solution (CPTo r) -> m (Solution (CPFrom r))
-    parseSolution r s = fromRight (error err) <$> parseResult r (Right s)
+    parseSolution :: r -> Solution (CPTo r) -> Solution (CPFrom r)
+    parseSolution r = fromRight (error err) . parseResult r . Right
     -- | Parses a 'Conflict' of a 'ComplexityProblem' back.
-    parseConflict :: Monad m => r -> Conflict (CPTo r) -> m (Conflict (CPFrom r))
-    parseConflict r c = fromLeft  (error err) <$> parseResult r (Left c)
+    parseConflict :: r -> Conflict (CPTo r) -> Conflict (CPFrom r)
+    parseConflict r = fromLeft  (error err) . parseResult r . Left
     -- | Parses a 'Result' of a 'ComplexityProblem' back.
-    parseResult   :: Monad m => r -> Result   (CPTo r) -> m (Result (CPFrom r))
-    parseResult r = (fmap Left ||| fmap Right) . bimap (parseConflict r) (parseSolution r)
+    parseResult   :: r -> Result   (CPTo r) -> Result (CPFrom r)
+    parseResult r = bimap (parseConflict r) (parseSolution r)
     -- | Parses the 'Assumption' into an equivalent sequence of other assumptions.
     parseAssumption :: r -> Assumption (CPFrom r) -> [Assumption (CPTo r)]
 
@@ -77,6 +76,6 @@ instance (Reduction r1, Reduction r2, CPFrom r2 ~ CPTo r1) => Reduction (r2 👉
         where
             (e' ,r' ) = parseEncoding r1 e
             (e'',r'') = parseEncoding r2 e'
-    parseSolution   (r2 :👉 r1) = parseSolution   r1 <=< parseSolution   r2
-    parseConflict   (r2 :👉 r1) = parseConflict   r1 <=< parseConflict   r2
+    parseSolution   (r2 :👉 r1) = parseSolution   r1  .  parseSolution   r2
+    parseConflict   (r2 :👉 r1) = parseConflict   r1  .  parseConflict   r2
     parseAssumption (r2 :👉 r1) = parseAssumption r2 <=< parseAssumption r1

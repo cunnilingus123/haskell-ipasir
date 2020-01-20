@@ -59,8 +59,8 @@ instance (Enum e, Ix e) => Reduction (SATRedLBoolBool e) where
     type CPTo   (SATRedLBoolBool e) = SAT e Bool
     newReduction = SATRedLBoolBool
     parseEncoding _ = (, SATRedLBoolBool)
-    parseConflict _ = pure
-    parseSolution _ = pure . fmap boolToLBool
+    parseConflict _ = id
+    parseSolution _ = fmap boolToLBool
     parseAssumption _ = pure
 
 boolToLBool :: Bool -> LBool

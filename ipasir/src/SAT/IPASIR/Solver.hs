@@ -75,7 +75,7 @@ solveAll s encoding = unwrapMonadForNonIterative s $ do
 
 instance (Reduction r, Solver s, CPS s ~ CPTo r) => Solver (r 👉 s) where
     type CPS (r 👉 s) = CPFrom r
-    solution _ encoding = runIdentity $ parseResult red $ solution (Proxy :: Proxy s) enc
+    solution _ encoding = parseResult red $ solution (Proxy :: Proxy s) enc
         where
             (enc, red) = parseEncoding (newReduction :: r) encoding
     satisfiable _ encoding = satisfiable (Proxy :: Proxy s) enc
@@ -90,7 +90,7 @@ instance (Reduction r, IncrementalSolver s, CPS s ~ CPTo r)
         let (encoding', r') = parseEncoding r encoding 
         s' <- addEncoding s encoding'
         return (r' :👉 s')
-    solve (r :👉 s) = parseResult r =<< solve s
+    solve (r :👉 s) = parseResult r <$> solve s
     assume (r :👉 s) ass = assume s `mapM_` parseAssumption r ass
     unwrapMonadForNonIterative _ = unwrapMonadForNonIterative (Proxy :: Proxy s)
     interleaveMonad _            = interleaveMonad (Proxy :: Proxy s)
