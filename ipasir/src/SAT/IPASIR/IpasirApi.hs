@@ -9,8 +9,8 @@ import Control.Monad (forM_)
 import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
 
 import SAT.IPASIR.Solver
-import SAT.IPASIR.ComplexityProblem (LBool(..), enumToLBool)
-import qualified SAT.IPASIR.ComplexityProblem as CP
+import SAT.IPASIR.ComplexityProblemInstances (LBool(..), enumToLBool)
+import qualified SAT.IPASIR.ComplexityProblemInstances as CP
 
 type IDType  = Word
 type Var     = CInt
@@ -33,7 +33,7 @@ instance Ix CInt where
     a valid state to execute the function and the state doesn\'t update.
 -}
 class Ipasir a where    
-    -- | Every initialized Solver needs a unique ID. The ID is mostly the pointer to to solver.
+    -- | Every initialized Solver needs a unique ID. The ID is mostly the pointer to the solver.
     ipasirGetID :: a -> IDType
 
     -- | Return the name and the version of the incremental @SAT@ solving library.
@@ -118,7 +118,6 @@ class Ipasir a where
     -}
     ipasirSolution :: a -> Var -> IO (Array Var LBool)
     ipasirSolution solver maxi = do
-        let numberVars = succ $ fromEnum maxi
         let sol = array (1,maxi) [ (var, enumToLBool <$> ipasirVal solver var) | var <- [1..maxi]]
         sequence sol
     
@@ -204,9 +203,6 @@ instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     assume (IpasirSolver ip _) = ipasirAssume ip
     unwrapMonadForNonIterative _  = unsafePerformIO
     interleaveMonad _ = unsafeInterleaveIO
-
-instance (Ipasir i) => PartSolver (IpasirSolver i) where
-    solvePart = solving $ \ip _ -> return (fmap enumToLBool . ipasirVal ip)
 
 solving satCase (IpasirSolver ip maxVar) = do
     b <- ipasirSolve ip

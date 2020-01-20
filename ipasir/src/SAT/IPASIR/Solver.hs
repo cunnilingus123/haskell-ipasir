@@ -8,6 +8,7 @@ module SAT.IPASIR.Solver where
 import Data.Either (isRight)
 import Data.Bifunctor (bimap)
 import Data.Proxy (Proxy(Proxy))
+import Data.Functor.Identity (Identity(..))
 
 import SAT.IPASIR.ComplexityProblem
 
@@ -43,10 +44,6 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     --   'System.IO.Unsafe.unsafeInterleaveIO'.
     interleaveMonad            :: Proxy s -> MonadIS s a -> MonadIS s a
 
-class (IncrementalSolver s, SolutionParts (CPS s)) => PartSolver s where
-    solvePart :: (m ~ MonadIS s, cp ~ CPS s) 
-              => s -> m (ResultSol (CPS s) (Part cp -> m (SolutionPart cp)))
-
 -- | If you want to instantiate 'Solver' you can use this 
 --   function as a standard implementation for 'solution'.
 incrementalSolution :: forall s. IncrementalSolver s 
@@ -78,7 +75,7 @@ solveAll s encoding = unwrapMonadForNonIterative s $ do
 
 instance (Reduction r, Solver s, CPS s ~ CPTo r) => Solver (r 👉 s) where
     type CPS (r 👉 s) = CPFrom r
-    solution _ encoding = parseResult red $ solution (Proxy :: Proxy s) enc
+    solution _ encoding = runIdentity $ parseResult red $ solution (Proxy :: Proxy s) enc
         where
             (enc, red) = parseEncoding (newReduction :: r) encoding
     satisfiable _ encoding = satisfiable (Proxy :: Proxy s) enc
@@ -93,11 +90,7 @@ instance (Reduction r, IncrementalSolver s, CPS s ~ CPTo r)
         let (encoding', r') = parseEncoding r encoding 
         s' <- addEncoding s encoding'
         return (r' :👉 s')
-    solve (r :👉 s) = parseResult r <$> solve s
+    solve (r :👉 s) = parseResult r =<< solve s
     assume (r :👉 s) ass = assume s `mapM_` parseAssumption r ass
     unwrapMonadForNonIterative _ = unwrapMonadForNonIterative (Proxy :: Proxy s)
     interleaveMonad _            = interleaveMonad (Proxy :: Proxy s)
-
-instance (SPReduction r, PartSolver s, CPS s ~ CPTo r) 
-          => PartSolver (r 👉 s) where
-    solvePart (r :👉 s) = bimap (parseConflict r) (parseSolutionPart r) <$> solvePart s
