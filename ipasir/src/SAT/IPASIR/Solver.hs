@@ -6,9 +6,7 @@
 module SAT.IPASIR.Solver where
 
 import Data.Either (isRight)
-import Data.Bifunctor (bimap)
 import Data.Proxy (Proxy(Proxy))
-import Data.Functor.Identity (Identity(..))
 
 import SAT.IPASIR.ComplexityProblem
 
@@ -66,12 +64,12 @@ solveAll s encoding = unwrapMonadForNonIterative s $ do
     looper solver = do
         res <- solve solver :: MonadIS s (Result (CPS s))
         case res of
-            Left  _        -> pure []
-            Right solution -> do
+            Left  _   -> pure []
+            Right sol -> do
                 solver' <- addEncoding solver 
-                            $ negSolutionToEncoding (Proxy :: Proxy (CPS s)) solution
+                            $ negSolutionToEncoding (Proxy :: Proxy (CPS s)) sol
                 sols <- interleaveMonad s $ looper solver'
-                pure $ solution : sols
+                pure $ sol : sols
 
 instance (Reduction r, Solver s, CPS s ~ CPTo r) => Solver (r 👉 s) where
     type CPS (r 👉 s) = CPFrom r

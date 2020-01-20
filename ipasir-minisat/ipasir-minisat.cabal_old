@@ -1,0 +1,48 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 85125f2fedb6c70e0d1acf2f0337be1829830db38838429cebf7d240b840aac6
+
+name:           ipasir-minisat
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/ipasir-minisat#readme>
+homepage:       https://github.com/githubuser/ipasir-minisat#readme
+bug-reports:    https://github.com/githubuser/ipasir-minisat/issues
+author:         Gerrit Marquardt
+maintainer:     example@example.com
+copyright:      2020 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+    c-sources/solver.c
+    c-sources/solver.h
+    c-sources/vec.h
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/ipasir-minisat
+
+library
+  exposed-modules:
+      SAT.IPASIR.Minisat
+  other-modules:
+      Paths_ipasir_minisat
+  hs-source-dirs:
+      src
+  include-dirs:
+      c_sources
+  c-sources:
+      c_sources/main.c
+      c_sources/solver.c
+  includes:
+      solver.h
+      vec.h
+  build-depends:
+      base >=4.7 && <5
+  default-language: Haskell2010

@@ -3,12 +3,9 @@
 
 module SAT.IPASIR.ComplexityProblemInstances where
 
-import qualified Data.Map as M
-import Data.Map (Map, fromList, mapKeys)
-import Data.Array (Array, (!), ixmap, bounds)
+import Data.Array
 import Data.Ix (Ix(..))
 import Data.Bifunctor (bimap)
-import Data.Functor.Identity (Identity(..))
 
 import SAT.IPASIR.ComplexityProblem
 
@@ -21,6 +18,7 @@ instance Enum LBool where
     fromEnum LUndef =  0
     fromEnum _      = -1
 
+enumToLBool :: (Ord a, Num a) => a -> LBool
 enumToLBool i = case compare i 0 of
     GT -> LTrue
     EQ -> LUndef
@@ -72,8 +70,8 @@ instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
     type CPTo   (SATRedEnum e i b) = SAT i b
     newReduction = SATRedEnum
     parseEncoding _ encoding = ((map . map) parseEnum encoding, SATRedEnum)
-    parseConflict _ = pure . map parseEnum 
-    parseSolution _ = pure . mapIndex parseEnum
+    parseConflict _ = map parseEnum 
+    parseSolution _ = mapIndex parseEnum
         where
             mapIndex :: (Ix e, Enum e, Ix i, Enum i) => (e -> i) -> Array i a -> Array e a
             mapIndex f arr = ixmap (bimap parseEnum parseEnum (bounds arr)) f arr

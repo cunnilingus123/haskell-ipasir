@@ -36,6 +36,9 @@ class Ipasir a where
     -- | Every initialized Solver needs a unique ID. The ID is mostly the pointer to the solver.
     ipasirGetID :: a -> IDType
 
+    -- | Returns the number of variables.
+    ipasirNumberVars :: a -> IO Var
+
     -- | Return the name and the version of the incremental @SAT@ solving library.
     ipasirSignature :: a -> IO String
     ipasirSignature solver = return $ "Solver with ID " ++ show (ipasirGetID solver)
@@ -87,7 +90,7 @@ class Ipasir a where
      * Required state: @INPUT@ or @SAT@ or @UNSAT@
      * State after: @INPUT@ or @SAT@ or @UNSAT@
     -}
-    ipasirSolve :: a -> IO LBool
+    ipasirSolve :: a -> IO CInt-- LBool
 
     {-|
      Get the truth value of the given literal in the found satisfying
@@ -116,8 +119,9 @@ class Ipasir a where
      * Required state: @SAT@
      * State after: @SAT@
     -}
-    ipasirSolution :: a -> Var -> IO (Array Var LBool)
-    ipasirSolution solver maxi = do
+    ipasirSolution :: a -> IO (Array Var LBool)
+    ipasirSolution solver = do
+        maxi <- ipasirNumberVars solver
         let sol = array (1,maxi) [ (var, enumToLBool <$> ipasirVal solver var) | var <- [1..maxi]]
         sequence sol
     
@@ -143,11 +147,13 @@ class Ipasir a where
       * Required state: @UNSAT@
       * State after: @UNSAT@
     -}
-    ipasirConflict :: a -> Var -> IO [Var]
-    ipasirConflict solver maxi = filter (/=0) <$> sequence (ipasirConflict' maxi 1)
+    ipasirConflict :: a -> IO [Var]
+    ipasirConflict solver = do
+        maxi <- ipasirNumberVars solver
+        filter (/=0) <$> sequence (ipasirConflict' maxi 1)
         where
             ipasirConflict' :: Var -> Var -> [IO Var]
-            ipasirConflict' maxi i
+            ipasirConflict' maxi i 
                 | i > maxi  = []
                 | otherwise = (replaceFalse i <$> ipasirFailed solver i) : ipasirConflict' maxi (succ i)
             replaceFalse :: Num e => e -> Bool -> e
@@ -179,11 +185,11 @@ class Ipasir a where
 -}
 byIpasirAdd :: (a -> Var -> IO ()) -> a -> [Var] -> IO ()
 byIpasirAdd ipasirAdd solver l = do
-    ipasirAdd solver `mapM` l
+    ipasirAdd solver `mapM_` l
     ipasirAdd solver 0
 
 -- | This datatype makes an instance of 'Ipasir' to an instance of 'IncrementalSolver'.
-data IpasirSolver i = IpasirSolver i Var
+newtype IpasirSolver i = IpasirSolver i
 
 -- | The complexity problem of an instance of Ipasir' is always 'CP.SAT' 'CInt' 'CP.LBool'
 type IpasirCP = CP.SAT Var CP.LBool
@@ -194,21 +200,23 @@ instance (Ipasir i) => Solver (IpasirSolver i) where
 
 instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     type MonadIS (IpasirSolver i) = IO
-    newIterativeSolver = (`IpasirSolver` 0) <$> ipasirInit
-    addEncoding (IpasirSolver ip maxVar) sat = do
-        let m = (maximum . maximum) $ (map . map) abs sat
+    newIterativeSolver = IpasirSolver <$> ipasirInit
+    addEncoding (IpasirSolver ip) sat = do
         forM_ sat $ ipasirAddClause ip
-        return $ IpasirSolver ip $ max m maxVar
-    solve = solving $ \ip maxVar -> ipasirSolution ip maxVar
-    assume (IpasirSolver ip _) = ipasirAssume ip
+        return $ IpasirSolver ip
+    solve = solving $ \ip -> ipasirSolution ip
+    assume (IpasirSolver ip) = ipasirAssume ip
     unwrapMonadForNonIterative _  = unsafePerformIO
     interleaveMonad _ = unsafeInterleaveIO
 
-solving satCase (IpasirSolver ip maxVar) = do
+solving :: Ipasir t => (t -> IO b) -> IpasirSolver t -> IO (Either [Var] b)
+solving satCase (IpasirSolver ip) = do
     b <- ipasirSolve ip
     case b of
-        LFalse -> Left <$> ipasirConflict ip maxVar 
+        _ -> undefined
+    {-    LFalse -> Left <$> ipasirConflict ip 
         LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
                           "This can happen if you terminate the solver by using " ++
                           "ipasir_set_terminate (see ipasir.h)\n" 
-        LTrue  -> Right <$> satCase ip maxVar
+        LTrue  -> Right <$> satCase ip
+    -}
