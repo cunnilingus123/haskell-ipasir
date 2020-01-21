@@ -84,13 +84,13 @@ class Ipasir a where
      Solve the formula with specified clauses under the specified assumptions.
      If the formula is satisfiable the function returns @LTrue@ and the state of the solver is changed to @SAT@.
      If the formula is unsatisfiable the function returns @LFalse@ and the state of the solver is changed to @UNSAT@.
-     @ipasir_set_terminate@ is not supported.
+     If the calculation is interrupted the function returns LUndef. Note @ipasir_set_terminate@ is not supported.
      This function can be called in any defined state of the solver.
 
      * Required state: @INPUT@ or @SAT@ or @UNSAT@
      * State after: @INPUT@ or @SAT@ or @UNSAT@
     -}
-    ipasirSolve :: a -> IO CInt-- LBool
+    ipasirSolve :: a -> IO LBool
 
     {-|
      Get the truth value of the given literal in the found satisfying
@@ -213,10 +213,8 @@ solving :: Ipasir t => (t -> IO b) -> IpasirSolver t -> IO (Either [Var] b)
 solving satCase (IpasirSolver ip) = do
     b <- ipasirSolve ip
     case b of
-        _ -> undefined
-    {-    LFalse -> Left <$> ipasirConflict ip 
+        LFalse -> Left <$> ipasirConflict ip 
         LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
                           "This can happen if you terminate the solver by using " ++
                           "ipasir_set_terminate (see ipasir.h)\n" 
         LTrue  -> Right <$> satCase ip
-    -}

@@ -87,6 +87,25 @@ extern int     solver_nconflicts(solver* s);
 
 extern void    solver_setnvars(solver* s,int n);
 
+// -------- Made by Gerrit --------
+
+// Solves until the next solution is found. Return values:
+//  - lUndef means the solver found a solution and this might
+//    not be the last one. You can call the function again for another solution.
+//  - lTrue means the solver found the unique solution.
+//  - lFalse means that there is no solution.
+// Do not use this function again after getting lTrue or lFalse.
+// You can read the solution and the conflict in s->solution.
+// I didnt understand the parameters. For some reason they always satisfy
+//  - nof_conflicts = 100
+//  - nof_learnts = (int) (solver_nclauses(s) / 3)
+// I guess it means something like "when is it time to stop learning clauses and simplify?"
+extern lbool solver_solution(solver* s);
+extern int ipasirVal(solver* s, int lit);
+extern void assume_(solver* s, int lit);
+
+// ------ End made by Gerrit ------
+
 struct stats_t
 {
     uint64   starts, decisions, propagations, inspects, conflicts;
@@ -156,6 +175,10 @@ struct solver_t
     int      verbosity;     // Verbosity level. 0=silent, 1=some progress report, 2=everything
 
     stats    stats;
+
+    lbool*   solution;      // By Gerrit
+    bool     blocking;      // By Gerrit
+    bool     assumptionBlock; // By Gerrit
 };
 
 #endif

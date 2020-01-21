@@ -6,7 +6,7 @@
 
 module SAT.IPASIR.ComplexityProblem where
 
-import Data.Proxy
+import Data.Proxy (Proxy(..))
 import Data.Bifunctor (bimap)
 import Control.Monad ((<=<))
 

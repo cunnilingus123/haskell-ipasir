@@ -24,6 +24,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <math.h>
 #include <stdint.h>
 #include <limits.h>
+#include <string.h>
 
 #include "solver.h"
 
@@ -383,6 +384,7 @@ void solver_setnvars(solver* s,int n)
         s->levels    = (int*)    realloc(s->levels,   sizeof(int)*s->cap);
         s->tags      = (lbool*)  realloc(s->tags,     sizeof(lbool)*s->cap);
         s->trail     = (lit*)    realloc(s->trail,    sizeof(lit)*s->cap);
+        s->solution  = (lbool*)  realloc(s->solution,  sizeof(lbool)*s->cap);
     }
 
     for (var = s->size; var < n; var++){
@@ -444,8 +446,11 @@ static inline void assume(solver* s, lit l){
 #ifdef VERBOSEDEBUG
     printf(L_IND"assume("L_LIT")\n", L_ind, L_lit(l));
 #endif
+    printf("Before rl=%i dl=%i", s->root_level, solver_dlevel(s));
     veci_push(&s->trail_lim,s->qtail);
+    printf("Middle rl=%i dl=%i", s->root_level, solver_dlevel(s));
     enqueue(s,l,(clause*)0);
+    printf("After rl=%i dl=%i\n", s->root_level, solver_dlevel(s));
 }
 
 
@@ -955,7 +960,7 @@ static lbool solver_testblkcls(solver *s, veci *cls) // for debug
 }
 
 
-static lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
+lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
 {
     int*    levels          = s->levels;
     double  var_decay       = 0.95;
@@ -965,7 +970,8 @@ static lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
     int     conflictC       = 0;
     veci    learnt_clause;
 
-    assert(s->root_level == solver_dlevel(s));
+   // printf("in search rl=%i dl=%i\n", s->root_level, solver_dlevel(s));
+   // assert(s->root_level == solver_dlevel(s));
 
     s->stats.starts++;
     s->var_decay = (float)(1 / var_decay   );
@@ -976,6 +982,7 @@ static lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
 		if (eflag == 1) return l_False;
         clause* confl = solver_propagate(s);
         if (confl != 0){
+            printf("pointer stelle 1: %i", (int)confl);
             // CONFLICT
             int blevel;
 
@@ -984,11 +991,14 @@ static lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
 #endif
             s->stats.conflicts++; conflictC++;
             if (solver_dlevel(s) <= s->root_level){
+                memcpy(s->solution, s->assigns, solver_nvars(s) * sizeof(lbool));
                 veci_delete(&learnt_clause);
-                return l_True; // changed to l_True.
+                return l_False; // changed to l_True.
+                                /* But I changed it back! */
             }
-
+            printf("pointer stelle 2: %i", (int)confl);
             veci_resize(&learnt_clause,0);
+            printf("pointer stelle 3: %i", (int)confl);
             solver_analyze(s, confl, &learnt_clause);
             blevel = veci_size(&learnt_clause) > 1 ? levels[lit_var(veci_begin(&learnt_clause)[1])] : s->root_level;
             blevel = s->root_level > blevel ? s->root_level : blevel;
@@ -1040,6 +1050,7 @@ static lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
                             fprintf(s->out, "%d ", (s->assigns[x] == l_True)? x+1: -(x+1));
                         fprintf(s->out, "0\n");
                     }
+                    memcpy(s->solution, s->assigns, solver_nvars(s) * sizeof(lbool));
 #ifndef NONDISJOINT
                     solver_inc_totsol(s);
 #endif
@@ -1058,8 +1069,9 @@ static lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
                     }
                     fprintf(s->out, "0\n");
                 }
-
+                    
                 if (veci_size(&s->blkcls) == 0) {
+                    memcpy(s->solution, s->assigns, solver_nvars(s) * sizeof(lbool));
                     veci_delete(&learnt_clause);
                     return l_True;
                 }
@@ -1127,8 +1139,9 @@ static lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
 #ifdef VERBOSEDEBUG
                 printf(L_IND"**CONTINUE SEARCH FROM SCRATCH**\n", L_ind);
 #endif
+                memcpy(s->solution, s->assigns, solver_nvars(s) * sizeof(lbool));
                 solver_canceluntil(s, s->root_level);
-                solver_addclause(s, veci_begin(&s->blkcls), veci_begin(&s->blkcls)+veci_size(&s->blkcls));
+    //            solver_addclause(s, veci_begin(&s->blkcls), veci_begin(&s->blkcls)+veci_size(&s->blkcls));
                 veci_delete(&learnt_clause);
                 return l_Undef; // restart from scratch
 #endif
@@ -1172,6 +1185,7 @@ solver* solver_new(void)
     s->levels    = 0;
     s->tags      = 0;
     s->trail     = 0;
+    s->solution  = 0;
 
 
     s->stats.clk       = (clock_t)0;
@@ -1205,6 +1219,8 @@ solver* solver_new(void)
     s->stats.learnts_literals = 0;
     s->stats.max_literals     = 0;
     s->stats.tot_literals     = 0;
+    s->blocking               = 0;
+    s->assumptionBlock        = 0;
 
 #ifdef GMP
     mpz_init(s->stats.tot_solutions);
@@ -1262,6 +1278,7 @@ void solver_delete(solver* s)
         free(s->levels   );
         free(s->trail    );
         free(s->tags     );
+        free(s->solution );
     }
 
     free(s);
@@ -1277,7 +1294,7 @@ bool solver_addclause(solver* s, lit* begin, lit* end)
 
     if (begin == end) return false;
 
-    printlits(begin,end); printf("\n");
+    // printlits(begin,end); printf("\n");
     // insertion sort
     maxvar = lit_var(*begin);
     for (i = begin + 1; i < end; i++){
@@ -1305,10 +1322,17 @@ bool solver_addclause(solver* s, lit* begin, lit* end)
 
     //printf("final: "); printlits(begin,j); printf("\n");
 
-    if (j == begin)          // empty clause
+    if (j == begin){          // empty clause
+        s->blocking = 1;
         return false;
-    else if (j - begin == 1) // unit clause
-        return enqueue(s,*begin,(clause*)0);
+    }
+    else if (j - begin == 1){ // unit clause 
+        bool b = enqueue(s,*begin,(clause*)0);
+        if( !b ){
+            s->blocking = 1;
+        }
+        return b;
+    }
 
     // create new clause
     vecp_push(&s->clauses,clause_new(s,begin,j,0));
@@ -1504,3 +1528,62 @@ void sort(void** array, int size, int(*comp)(const void *, const void *))
     double seed = 91648253;
     sortrnd(array,size,comp,&seed);
 }
+
+
+// made by Gerrit
+
+extern lbool solver_solution(solver* s){
+    if( s->blocking )
+        return l_False;
+
+    if( s->assumptionBlock ){
+        s->assumptionBlock = 0;
+        return l_False;
+    }
+
+    lbool b = solver_search(s, 100, solver_nclauses(s) / 3);
+    if ( b == l_Undef ){
+        return l_True;
+    } else {
+        s->blocking = 1;
+        return b;
+    }
+}
+
+int ipasirVal(solver* s, int lit){
+    if(lit == 0) return 0;
+    int abs = lit >= 0 ? lit : -lit;
+    lbool b = s->solution[abs-1]; 
+    return abs * b;
+}
+
+void assume_(solver* s, int lit){
+    // case 2: assert(s->assigns[lit_var(l)] == l_Undef);
+    // case 1: assert(s->qtail == s->qhead);
+    lbool b = s->assigns[lit_var(lit)];
+    if( b != l_Undef ){
+        if( lit_sign(lit) == 0 ^ b == l_True ) {
+            s->assumptionBlock = 1;
+            printf("blocking assumption\n");
+        } else {
+            printf("trivial assumption\n");
+        }
+        return;
+    }
+    if( s->qtail != s->qhead ){
+      // Wenn man mehr als eine assumption macht kommt man hier hinein.
+      // und dann ist das Ergebnis auch nicht korrekt.
+      //  s->assumptionBlock = 1;
+      assume(s, lit);
+      solver_propagate(s);
+      printf("Der komische Fall\n");
+      return;
+    }
+//    veci_push(&s->trail_lim,s->qtail);
+//    printf("Assumed: %i\n", lit);
+    assume(s, lit);
+    solver_propagate(s);
+    //enqueue(s,lit, (clause*) 0);
+}
+
+// End made by Gerrit

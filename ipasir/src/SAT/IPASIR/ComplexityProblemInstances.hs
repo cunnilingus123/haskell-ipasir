@@ -1,5 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module SAT.IPASIR.ComplexityProblemInstances where
 
@@ -51,6 +52,17 @@ instance (Enum e, Ix e) => ComplexityProblem (SAT e b) where
     type Solution (SAT e b) = Array e b
     type Conflict (SAT e b) = [e]
     type Assumption (SAT e b) = e
+
+instance (Enum e, Ix e, Num e) => Solutiontransform (SAT e LBool) where
+    solutionToEncoding    _ = map pure . sol2Enc ((*) . parseEnum)
+    negSolutionToEncoding x = pure . map negate . sol2Enc ((*) . parseEnum)
+
+instance (Enum e, Ix e, Num e) => Solutiontransform (SAT e Bool) where
+    solutionToEncoding    _ = map pure . sol2Enc ((*) . pred . (*2) . parseEnum)
+    negSolutionToEncoding x = pure . map negate . sol2Enc ((*) . pred . (*2) . parseEnum)
+
+sol2Enc :: (Enum e, Ix e, Num e, Enum b) => (b -> e -> e) -> Array e b -> [e]
+sol2Enc f = filter (/=0) . map (uncurry (flip f)) . assocs
 
 instance (Enum e, Ix e) => Reduction (SATRedLBoolBool e) where
     type CPFrom (SATRedLBoolBool e) = SAT e LBool
