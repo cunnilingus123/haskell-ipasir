@@ -1,4 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module SAT.IPASIR.Minisat where
 
@@ -9,6 +11,7 @@ import Foreign.C.Types
 import Control.Monad (when)
 import Control.Monad.Loops 
 import Data.Proxy
+import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 
 import SAT.IPASIR.IpasirApi
 import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT(..))
@@ -19,7 +22,7 @@ import SAT.IPASIR.ComplexityProblem
 
 -- | An abstract type for the solver.
 data CSolver = CSolver
-newtype HSolver = HSolver (Ptr CSolver)
+newtype HSolver = HSolver (ForeignPtr CSolver)
 
 -- ----------------------------------------------------------------------
 -- * Conversions
@@ -86,23 +89,35 @@ cChartoLBool 1 = LTrue
 cChartoLBool 0 = LUndef
 cChartoLBool _ = LFalse
 
+withSP (HSolver p) = generalizedWithForeignPtr p
+
+class ForeignFunction b where
+    generalizedWithForeignPtr :: ForeignPtr a -> (Ptr a -> b) -> b
+
+instance ForeignFunction (IO a) where
+    generalizedWithForeignPtr = withForeignPtr
+
+instance (ForeignFunction b) => ForeignFunction (a -> b) where
+    generalizedWithForeignPtr s f x = generalizedWithForeignPtr s $ flip f x
+
 instance Ipasir HSolver where
-  ipasirGetID (HSolver p) = toEnum $ fromEnum $ ptrToIntPtr p
-  ipasirInit = HSolver <$> cNewSolver
-  ipasirNumberVars (HSolver p) = cSolverNVars p
-  ipasirSolve (HSolver p) = do 
-    b <- cSolverSolution p
-    case b of
-      1 -> pure LTrue
-      0 -> pure LUndef
-      _ -> pure LFalse
-  ipasirAddClause s@(HSolver p) clause = do
-    cClause <- newArray $ map toLit clause
-    b <- cSolverAddClause p cClause $ advancePtr cClause $ length clause
-    free cClause
-  ipasirAssume (HSolver p) i = cAssume p $ toLit i
-  ipasirVal (HSolver p) = cIpasirVal p
-  ipasirFailed (HSolver p) i = (/=0) <$> cIpasirVal p i
+  ipasirGetID (HSolver p) = toEnum $ fromEnum $ ptrToIntPtr $ unsafeForeignPtrToPtr p
+  ipasirInit = HSolver <$> (newForeignPtr cDelSolverGC =<< cNewSolver)
+  ipasirNumberVars s = withSP s cSolverNVars
+  ipasirSolve s = do 
+    b <- withSP s cSolverSolution
+    pure $ case b of
+      1 -> LTrue
+      0 -> LUndef
+      _ -> LFalse
+  ipasirAddClause s clause = do
+    startPtr <- newArray $ map toLit clause
+    let endPtr = advancePtr startPtr $ length clause
+    b <- withSP s cSolverAddClause startPtr endPtr -- cnf became trivial if b is true
+    free startPtr
+  ipasirAssume s i = withSP s cAssume $ toLit i
+  ipasirVal s = withSP s cIpasirVal
+  ipasirFailed s i = (/=0) <$> withSP s cIpasirVal i
 
 f1 = ipasirInit :: IO HSolver
 
@@ -118,7 +133,7 @@ f2 = do
 
 f2' = do 
   x <- f2
-  ipasirAssume x (4)
+  ipasirAssume x 4
   return x
 
 f3 = do 
