@@ -1,94 +1,192 @@
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module SAT.IPASIR.TestingSuite where
 
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Gen
-import GHC.TypeNats
-import Data.Proxy
-import Control.Monad 
-import Data.List
-import Data.Reflection
-import Data.Maybe
+import Test.QuickCheck.Arbitrary (Arbitrary(..))
+import Test.QuickCheck.Gen (Gen, elements, choose, vectorOf, listOf)
+import Test.QuickCheck (Property, generate)
+import Data.Proxy (Proxy (..))
+import Control.Monad (liftM2, zipWithM, guard)
+import Data.List (sort, nub, tails, (\\), intercalate)
+import Data.Reflection (Reifies(..))
+import Data.Maybe (mapMaybe)
+import Data.Array (Array(..), assocs, (!))
+import Data.Ix (Ix(..))
 
+import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT)
+import SAT.IPASIR.ComplexityProblem (ComplexityProblem(..), Result, Solutiontransform(..))
 import SAT.IPASIR.Solver
-import SAT.IPASIR.ComplexityProblem
 
--- Assumption restrictions
+import Foreign.C.Types
+import SAT.IPASIR.IpasirApi ()
+import Debug.Trace
+{-
+createSatTest :: forall s e b.
+               ( IncrementalSolver s
+               , Num e, Ix e, Ord e
+               , Eq b
+               , SAT e b ~ CPS s
+               ) 
+            => Proxy s -> b -> b -> RefiedArbitrary [[e]] e -> Gen Bool
+createSatTest s f t ra = do
+    let solutionCheck enc ass = checkSatSolution f t (map pure ass ++ concat enc)
+    let conflictCheck _ _ _ = True
+    let resultCheck e a  = \case
+            Left  c -> conflictCheck e a c
+            Right s -> solutionCheck e a s
+    createTest s ra resultCheck
+-}
+
+assu' :: RefiedArbitrary [[CInt]] CInt
+assu' = createSatArbitrary 7 1 SingleAssumtionBeforeSolve EveryVarUsed NormalClause
+
+deb :: (IncrementalSolver s, CPS s ~ SAT CInt LBool)
+    => Proxy s -> IO ()
+deb solver = do 
+    prog <- generate $ genProgram assu'
+    print prog
+    print $ createTest solver (checkSatEncsAssumpt LFalse LTrue) prog
+    return ()
+
+
+
+-- TODO Replace when the FreeMonad is made.
+createTest  :: forall s cp e a r m t.
+               ( IncrementalSolver s
+               , Show r
+               , cp ~ CPS s
+               , e ~ Encoding cp
+               , a ~ Assumption cp
+               , r ~ Result cp
+               , m ~ MonadIS s
+               ) 
+            => Proxy s -> ([e] -> [a] -> r -> Bool) -> ProgramS t e a  -> Bool
+createTest _ validate (ProgramS (Program coms))
+    = unwrapMonadForNonIterative (Proxy :: Proxy s) $ do
+        s <- newIterativeSolver :: m s
+        looper s [] [] coms
+  where
+    looper :: s -> [e] -> [a] -> [Command e a] -> m Bool
+    looper s encs assp []     = pure True 
+    looper s encs assp (SolveNow:xs) = do
+        res <- solve s
+        traceM $ show res
+        l'  <- looper s encs [] xs
+        return $ validate encs assp res && l'
+    looper s encs assp (AddEncoding e : xs) = do
+        s' <- addEncoding s e
+        looper s' (e:encs) assp xs 
+    looper s encs assp (AssumeSomething a : xs) = do
+        assume s a
+        looper s encs (a:assp) xs
+
+checkSatSolution :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
+                 => b -> b -> [[e]] -> Array e b -> Bool
+checkSatSolution f t encoding solution = all checkC encoding 
+  where
+    checkC clause = any check clause || trivialClause clause
+    trivialClause clause = or $ do
+        (h:t) <- init (tails clause)
+        return $ negate h `elem` t
+    check lit
+      | lit < 0   = solution ! abs lit == f
+      | otherwise = solution ! lit     == t
+
+checkSatResult :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
+                 => b -> b -> [[e]] -> Result (SAT e b) -> Bool
+checkSatResult f t enc (Left _) = True
+checkSatResult f t enc (Right s) = checkSatSolution f t enc s
+
+checkSatEncsAssumpt :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
+                 => b -> b -> [[[e]]] -> [e] -> Result (SAT e b) -> Bool
+checkSatEncsAssumpt f t encs assumps = checkSatResult f t (map pure assumps ++ concat encs)
+
 data AssumptionRestriction 
     = NoAssumption 
     | SingleAssumtionBeforeSolve
     | MultiAssumptionBeforeSolve
     | NoAssumptionRestriction
-    deriving(Show, Eq, Ord , Enum)
+    deriving (Show, Eq, Ord, Enum)
 
-data VariableRestriction
+data VariableUsageRestriction
     = EveryVarUsed
     | MaxVarUsed
     | NoEncodingRestriction
-    deriving(Show, Eq, Ord , Enum)
+    deriving (Show, Eq, Ord, Enum)
+
+data ClausesRestriction
+    = NormalClause
+    | RandomLits
+    deriving (Show, Eq, Ord, Enum)
 
 data CommandMarker
     = AddEncodingMarker
     | CompleteEncodingMarker
     | AssumeSomethingMarker
     | SolveNowMarker
-    deriving(Show, Eq, Ord , Enum)
+    deriving (Show, Eq, Ord, Enum)
 
 data Command enc ass
     = AddEncoding enc
     | AssumeSomething ass
     | SolveNow
-    deriving(Show, Eq, Ord)
+    deriving (Show, Eq, Ord)
 
 newtype Program enc ass = Program [Command enc ass]
     deriving (Show, Eq, Ord)
 newtype ProgramS s enc ass = ProgramS (Program enc ass)
+
+unreflectProgram :: Proxy s -> ProgramS s enc ass -> Program enc ass
+unreflectProgram _ (ProgramS p) = p
+
+instance Show (Command enc ass) => Show (ProgramS s enc ass) where
+    show (ProgramS (Program coms)) = "-- ProgramS --\n" ++ intercalate "\n" (map show coms)
 
 data RefiedArbitrary enc ass = RefiedArbitrary (Gen enc) (Gen ass) ([enc] -> enc) Word AssumptionRestriction
 
 createSatArbitrary :: forall e. (Enum e, Num e, Eq e)
                    => Word 
                    -> Word 
-                   -> AssumptionRestriction 
-                   -> VariableRestriction 
+                   -> AssumptionRestriction
+                   -> VariableUsageRestriction 
+                   -> ClausesRestriction
                    -> RefiedArbitrary [[e]] e
-createSatArbitrary nVar nSolvings aRestr vRestr
-    = RefiedArbitrary undefined undefined (completeEncoding vRestr) nSolvings aRestr
+createSatArbitrary nVar nSolvings aRestr vRestr cRestr
+    = RefiedArbitrary (genEncoding cRestr) litGen (completeEncoding vRestr) nSolvings aRestr
   where
-    maxLit = toEnum $ fromEnum nVar :: e
+    genEncoding RandomLits = listOf $ listOf litGen
+    genEncoding _          = listOf $ 
+        filter (/=0) . zipWith (*) [1..maxLit] <$> vectorOf maxLitInt (elements [-1,0,1])
+    litGen :: Gen e
+    litGen = do
+        l <- choose (negate maxLitInt + 1, maxLitInt)
+        let lit = case l of
+                0 -> negate maxLitInt
+                x -> x
+        return $ toEnum lit
+    maxLitInt = fromEnum nVar :: Int
+    maxLit = toEnum maxLitInt :: e
     vars :: [[[e]]] -> [e]
     vars = map abs . concat .  concat 
-    completeEncoding :: VariableRestriction -> [[[e]]] -> [[e]]
-    completeEncoding EveryVarUsed          = undefined
+    completeEncoding :: VariableUsageRestriction -> [[[e]]] -> [[e]]
+    completeEncoding EveryVarUsed          = filter (not . null) . pure . ([1..maxLit] \\) . vars
     completeEncoding MaxVarUsed            = pure . (maxLit <$) . guard . notElem maxLit . vars
     completeEncoding NoEncodingRestriction = const []
 
 instance (Reifies s (RefiedArbitrary enc ass)) => Arbitrary (ProgramS s enc ass) where
-    arbitrary = genProgramm ra
+    arbitrary = genProgram ra
       where
         ra = reflect (Proxy :: Proxy s)
 
-unreflectArbi :: ProgramS s enc ass -> Proxy s -> Program enc ass
-unreflectArbi (ProgramS p) _ = p
-
-genProgramm :: forall s enc ass. 
-               RefiedArbitrary enc ass 
-            -> Gen (ProgramS s enc ass)
-genProgramm (RefiedArbitrary encoding assumption completer n restr) = do
+genProgram :: forall s enc ass. RefiedArbitrary enc ass -> Gen (ProgramS s enc ass)
+genProgram (RefiedArbitrary encoding assumption completer n restr) = do
     block <- genCommandBlock n restr
-    coms <- sequence $ parseCommand <$> block
-    return $ ProgramS $ Program coms
+    ProgramS . Program <$> parser block []
   where
-    parseCommand :: CommandMarker -> Gen (Command enc ass)
+    parseCommand :: CommandMarker -> Gen (Command enc ass) -- Partial function !!! Use parser.
     parseCommand AddEncodingMarker     = AddEncoding     <$> encoding
     parseCommand AssumeSomethingMarker = AssumeSomething <$> assumption
     parseCommand SolveNowMarker        = return SolveNow
@@ -96,9 +194,9 @@ genProgramm (RefiedArbitrary encoding assumption completer n restr) = do
     parser (CompleteEncodingMarker:xs) past = do
         rest <- mapM parseCommand xs
         let c = AddEncoding $ completer $ mapMaybe toEncoding past
-        return $ past ++ c : rest
+        return $ reverse past ++ c : rest
     parser (x:xs) past = parser xs =<< (:past) <$> parseCommand x
-    parser _      past = pure past
+    parser _      past = pure $ reverse past
     toEncoding :: Command enc ass -> Maybe enc
     toEncoding (AddEncoding e) = Just e
     toEncoding _ = Nothing
@@ -114,6 +212,8 @@ genCommandBlock n restr = do
     f :: AssumptionRestriction -> Word -> Word -> Gen [CommandMarker]
     f _ 0 0 = pure [CompleteEncodingMarker, SolveNowMarker]
     f _ 0 _ = pure [SolveNowMarker]
+  --  f SingleAssumtionBeforeSolve 1 0 = liftM2 (:) assOrAdd $ f SingleAssumtionBeforeSolve 0 1
+  -- Hier ist ein Fehler
     f SingleAssumtionBeforeSolve 1 m = liftM2 (:) assOrAdd $ f SingleAssumtionBeforeSolve 0 m
     f r n m = do
         c <- if r <= SingleAssumtionBeforeSolve
@@ -124,34 +224,3 @@ genCommandBlock n restr = do
     resorting 
         | restr == MultiAssumptionBeforeSolve = sort
         | otherwise = id
-
-
-
-
-
-
-
-{-
-newtype SolverProgram a e (nSolves :: Nat) aC eC = SolverProgram [Command a e]
-
-assumeFunction :: ComplexityProblem cp => Proxy cp -> Gen (Assumption cp)
-assumeFunction = undefined
-encodeFunction :: ComplexityProblem cp => Proxy cp -> Gen (Encoding cp)
-encodeFunction = undefined
-
-f :: ComplexityProblem cp => Word -> Gen [Command (Assumption cp) (Encoding cp)]
-f 0 = pure [SolveNow]
-f n = do 
-    i <- choose (0,1)
-    newCommand <- if i == 0
-        then AssumeSomething <$> assumeFunction
-        else AddEncoding <$> encodeFunction
-    (newCommand :) $ f $ n-1
-
-instance (KnownNat n,ComplexityProblem cp) => Arbitrary (SolverProgram a e n NoAssumptionRestriction NoEncodingRestriction) where
-    arbitrary = do 
-        let nSolves = natVal (Proxy :: Proxy n)
-        amountCommands <- sequence $ (arbitrary :: Gen Word) <$ [1..nSolves]
-        commands <- sequence $ f <$> amountCommands
-        pure $ SolverProgram $ concat commands
--}

@@ -17,12 +17,29 @@ import SAT.IPASIR.IpasirApi
 import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT(..))
 import SAT.IPASIR.ComplexityProblem
 
+
+
+-- Some Testing
+import SAT.IPASIR.Solver
+
+g1 = do
+  s1 <- newIterativeSolver :: IO Minisat
+  s2 <- addEncoding s1 [[1,2,3,4],[-2,-3],[-1,-5]]
+  assume s2 (-3)
+  s3 <- addEncoding s2 [[-1,-5]]
+  assume s3 4
+  assume s3 5
+  solve s3
+
 -- ----------------------------------------------------------------------
 -- * Some types
 
 -- | An abstract type for the solver.
 data CSolver = CSolver
 newtype HSolver = HSolver (ForeignPtr CSolver)
+type Minisat = IpasirSolver HSolver
+minisat :: Proxy Minisat
+minisat = Proxy
 
 -- ----------------------------------------------------------------------
 -- * Conversions

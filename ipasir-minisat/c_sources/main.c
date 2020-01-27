@@ -239,8 +239,8 @@ static inline void PRINT_USAGE(char *p)
     fprintf(stderr, "Usage:\t%s [options] input-file [output-file]\n", (p));
 }
 
-
-int main(int argc, char** argv)
+/*
+int main( int argc, char** argv)
 {
     solver* s = solver_new();
     lbool   st;
@@ -253,7 +253,7 @@ int main(int argc, char** argv)
   int  lim, span;
 
 
-  /*** RECEIVE INPUTS ***/  
+  // RECEIVE INPUTS  
   for(int i = 1; i < argc; i++) {
     if(argv[i][0] == '-') {
       switch (argv[i][1]){
@@ -310,3 +310,4 @@ int main(int argc, char** argv)
     solver_delete(s);
     return 0;
 }
+ */

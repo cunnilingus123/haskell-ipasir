@@ -446,11 +446,11 @@ static inline void assume(solver* s, lit l){
 #ifdef VERBOSEDEBUG
     printf(L_IND"assume("L_LIT")\n", L_ind, L_lit(l));
 #endif
-    printf("Before rl=%i dl=%i", s->root_level, solver_dlevel(s));
+ //   printf("Before rl=%i dl=%i", s->root_level, solver_dlevel(s));
     veci_push(&s->trail_lim,s->qtail);
-    printf("Middle rl=%i dl=%i", s->root_level, solver_dlevel(s));
+ //   printf("Middle rl=%i dl=%i", s->root_level, solver_dlevel(s));
     enqueue(s,l,(clause*)0);
-    printf("After rl=%i dl=%i\n", s->root_level, solver_dlevel(s));
+ //   printf("After rl=%i dl=%i\n", s->root_level, solver_dlevel(s));
 }
 
 
@@ -982,7 +982,7 @@ lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
 		if (eflag == 1) return l_False;
         clause* confl = solver_propagate(s);
         if (confl != 0){
-            printf("pointer stelle 1: %i", (int)confl);
+            //printf("pointer stelle 1: %i", (int)confl);
             // CONFLICT
             int blevel;
 
@@ -996,9 +996,9 @@ lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
                 return l_False; // changed to l_True.
                                 /* But I changed it back! */
             }
-            printf("pointer stelle 2: %i", (int)confl);
+            //printf("pointer stelle 2: %i", (int)confl);
             veci_resize(&learnt_clause,0);
-            printf("pointer stelle 3: %i", (int)confl);
+            //printf("pointer stelle 3: %i", (int)confl);
             solver_analyze(s, confl, &learnt_clause);
             blevel = veci_size(&learnt_clause) > 1 ? levels[lit_var(veci_begin(&learnt_clause)[1])] : s->root_level;
             blevel = s->root_level > blevel ? s->root_level : blevel;
@@ -1292,8 +1292,10 @@ bool solver_addclause(solver* s, lit* begin, lit* end)
     lbool* values;
     lit last;
 
-    if (begin == end) return false;
-
+    if (begin == end) {
+        s->blocking = 1;
+        return false;
+    }
     // printlits(begin,end); printf("\n");
     // insertion sort
     maxvar = lit_var(*begin);
@@ -1336,7 +1338,6 @@ bool solver_addclause(solver* s, lit* begin, lit* end)
 
     // create new clause
     vecp_push(&s->clauses,clause_new(s,begin,j,0));
-
 
     s->stats.clauses++;
     s->stats.clauses_literals += j - begin;
