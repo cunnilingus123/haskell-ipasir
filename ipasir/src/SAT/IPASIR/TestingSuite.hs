@@ -212,9 +212,7 @@ genCommandBlock n restr = do
     f :: AssumptionRestriction -> Word -> Word -> Gen [CommandMarker]
     f _ 0 0 = pure [CompleteEncodingMarker, SolveNowMarker]
     f _ 0 _ = pure [SolveNowMarker]
-  --  f SingleAssumtionBeforeSolve 1 0 = liftM2 (:) assOrAdd $ f SingleAssumtionBeforeSolve 0 1
-  -- Hier ist ein Fehler
-    f SingleAssumtionBeforeSolve 1 m = liftM2 (:) assOrAdd $ f SingleAssumtionBeforeSolve 0 m
+    f SingleAssumtionBeforeSolve 1 m = fmap sort $ liftM2 (:) assOrAdd $ f SingleAssumtionBeforeSolve 0 m
     f r n m = do
         c <- if r <= SingleAssumtionBeforeSolve
             then pure AddEncodingMarker
