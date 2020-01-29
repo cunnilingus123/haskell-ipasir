@@ -8,10 +8,11 @@ module SAT.IPASIR.Minisat where
 
 import Foreign
 import Foreign.C.Types
-import Control.Monad (when)
+import Control.Monad (when, liftM2, liftM3)
 import Control.Monad.Loops 
 import Data.Proxy
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
+import Data.IORef
 
 import SAT.IPASIR.IpasirApi
 import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT(..))
@@ -21,6 +22,7 @@ import SAT.IPASIR.ComplexityProblem
 
 -- Some Testing
 import SAT.IPASIR.Solver
+import Debug.Trace
 
 g1 = do
   s1 <- newIterativeSolver :: IO Minisat
@@ -36,7 +38,7 @@ g1 = do
 
 -- | An abstract type for the solver.
 data CSolver = CSolver
-newtype HSolver = HSolver (ForeignPtr CSolver)
+data HSolver = HSolver (ForeignPtr CSolver) (IORef [CInt]) (Ptr CChar)
 type Minisat = IpasirSolver HSolver
 minisat :: Proxy Minisat
 minisat = Proxy
@@ -98,15 +100,15 @@ foreign import ccall unsafe "solver.h ipasirVal"
 foreign import ccall unsafe "solver.h solver_solution"
   cSolverSolution :: Ptr CSolver -> IO CChar
 
-foreign import ccall unsafe "solver.h assume_"
-  cAssume :: Ptr CSolver -> CInt -> IO ()
+foreign import ccall unsafe "solver.h solver_copy"
+  cCopySolver :: Ptr CSolver -> IO (Ptr CSolver)
 
 cChartoLBool :: CChar -> LBool
 cChartoLBool 1 = LTrue
 cChartoLBool 0 = LUndef
 cChartoLBool _ = LFalse
 
-withSP (HSolver p) = generalizedWithForeignPtr p
+withSP (HSolver p _ _) = generalizedWithForeignPtr p
 
 class ForeignFunction b where
     generalizedWithForeignPtr :: ForeignPtr a -> (Ptr a -> b) -> b
@@ -118,23 +120,44 @@ instance (ForeignFunction b) => ForeignFunction (a -> b) where
     generalizedWithForeignPtr s f x = generalizedWithForeignPtr s $ flip f x
 
 instance Ipasir HSolver where
-  ipasirGetID (HSolver p) = toEnum $ fromEnum $ ptrToIntPtr $ unsafeForeignPtrToPtr p
-  ipasirInit = HSolver <$> (newForeignPtr cDelSolverGC =<< cNewSolver)
+  ipasirGetID (HSolver p _ _) = toEnum $ fromEnum $ ptrToIntPtr $ unsafeForeignPtrToPtr p
+  ipasirInit = liftM3 HSolver (newForeignPtr cDelSolverGC =<< cNewSolver) 
+                              (newIORef [])
+                              (return nullPtr)
   ipasirNumberVars s = withSP s cSolverNVars
-  ipasirSolve s = do 
-    b <- withSP s cSolverSolution
+  ipasirSolve s@(HSolver p assumptions lastSol) = do
+    ass <- readIORef assumptions
+    b <- if null ass
+      then withSP s cSolverSolution
+      else do
+        traceM "Haskell 1"
+        cs <- withSP s cCopySolver
+        traceM "Haskell 2"
+        mapM_ (addClause cs . pure) ass 
+        traceM "Haskell 3"
+        b <- cSolverSolution cs
+        traceM "Haskell 4"
+        cDelSolver cs
+        traceM "Haskell 5"
+        writeIORef assumptions []
+        traceM "Haskell 6"
+        return b
     pure $ case b of
       1 -> LTrue
       0 -> LUndef
       _ -> LFalse
-  ipasirAddClause s clause = do
-    startPtr <- newArray $ map toLit clause
-    let endPtr = advancePtr startPtr $ length clause
-    b <- withSP s cSolverAddClause startPtr endPtr -- cnf became trivial if b is true
-    free startPtr
-  ipasirAssume s i = withSP s cAssume $ toLit i
+  ipasirAddClause s = withSP s addClause 
+  ipasirAssume (HSolver p ass _) a = modifyIORef ass (a:)
   ipasirVal s = withSP s cIpasirVal
   ipasirFailed s i = (/=0) <$> withSP s cIpasirVal i
+
+addClause :: Ptr CSolver -> [CInt] -> IO ()
+addClause ptr clause = do
+  startPtr <- newArray $ map toLit clause
+  let endPtr = advancePtr startPtr $ length clause
+  b <- cSolverAddClause ptr startPtr endPtr -- cnf became trivial if b is true
+  free startPtr
+
 
 f1 = ipasirInit :: IO HSolver
 

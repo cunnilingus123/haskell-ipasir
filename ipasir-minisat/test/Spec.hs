@@ -19,11 +19,11 @@ main = defaultMain testTree
 
 testTree :: TestTree
 testTree = testGroup "Testing Minisat" 
-           [ f "Easy way" easy
-           , f "multi Solve" multi
-           , f "All But Assume 1" allButAssume1
-           , f "All But Assume 2" allButAssume2
-           , f "assuming easy" assu
+           [-- f "Easy way" easy
+          -- , f "multi Solve" multi
+          -- , f "All But Assume 1" allButAssume1
+          -- , f "All But Assume 2" allButAssume2
+            f "assuming easy" assu
            ]
 
 easy = createSatArbitrary 8 1 NoAssumption EveryVarUsed NormalClause

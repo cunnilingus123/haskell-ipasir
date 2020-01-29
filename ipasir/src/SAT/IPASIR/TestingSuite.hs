@@ -23,22 +23,7 @@ import SAT.IPASIR.Solver
 import Foreign.C.Types
 import SAT.IPASIR.IpasirApi ()
 import Debug.Trace
-{-
-createSatTest :: forall s e b.
-               ( IncrementalSolver s
-               , Num e, Ix e, Ord e
-               , Eq b
-               , SAT e b ~ CPS s
-               ) 
-            => Proxy s -> b -> b -> RefiedArbitrary [[e]] e -> Gen Bool
-createSatTest s f t ra = do
-    let solutionCheck enc ass = checkSatSolution f t (map pure ass ++ concat enc)
-    let conflictCheck _ _ _ = True
-    let resultCheck e a  = \case
-            Left  c -> conflictCheck e a c
-            Right s -> solutionCheck e a s
-    createTest s ra resultCheck
--}
+
 
 assu' :: RefiedArbitrary [[CInt]] CInt
 assu' = createSatArbitrary 7 1 SingleAssumtionBeforeSolve EveryVarUsed NormalClause

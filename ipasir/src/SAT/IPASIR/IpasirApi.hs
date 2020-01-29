@@ -205,7 +205,7 @@ instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
         forM_ sat $ ipasirAddClause ip
         return $ IpasirSolver ip
     solve = solving $ \ip -> ipasirSolution ip
-    assume (IpasirSolver ip) = ipasirAssume ip
+    assume (IpasirSolver ip) ass = IpasirSolver ip <$ ipasirAssume ip ass
     unwrapMonadForNonIterative _  = unsafePerformIO
     interleaveMonad _ = unsafeInterleaveIO
 

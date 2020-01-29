@@ -23,6 +23,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #define vec_h
 
 #include <stdlib.h>
+#include <string.h>
 
 
 // vector of 32-bit intergers (added for 64-bit portability)
@@ -51,6 +52,14 @@ static inline void   veci_push   (veci* v, int e)
         v->cap = newsize; }
     v->ptr[v->size++] = e;
 }
+static inline void   veci_copy   (veci* v,veci* w)
+{
+    w->size = v->size;
+    w->cap  = v->cap;
+    w->ptr  = (int*)malloc(sizeof(int)*w->cap);
+    memcpy(w->ptr, v->ptr, w->size * sizeof(int));
+}
+
 
 
 // vector of 32- or 64-bit pointers
@@ -78,6 +87,14 @@ static inline void   vecp_push   (vecp* v, void* e)
         v->ptr = (void**)realloc(v->ptr,sizeof(void*)*newsize);
         v->cap = newsize; }
     v->ptr[v->size++] = e;
+}
+
+static inline void vecp_copy (vecp* v,vecp* w)
+{
+    w->size = v->size;
+    w->cap  = v->cap;
+    w->ptr  = (void**)malloc(sizeof(void*)*w->cap);
+    memcpy(w->ptr, v->ptr, w->size * sizeof(void*));
 }
 
 
