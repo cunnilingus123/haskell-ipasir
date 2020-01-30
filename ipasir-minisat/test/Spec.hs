@@ -39,7 +39,7 @@ unreflectF2 :: Proxy s -> ((ProgramS s a b -> c) -> d) -> (ProgramS s a b -> c) 
 unreflectF2 _ = id
 
 test1 :: ProgramS s [[CInt]] CInt -> Bool
-test1 = createTest (Proxy :: Proxy Minisat) $ checkSatEncsAssumpt LFalse LTrue
+test1 = createTest (Proxy :: Proxy CMinisat) $ checkSatEncsAssumpt LFalse LTrue
 
 f :: String -> RefiedArbitrary [[CInt]] CInt -> TestTree
 f name easy = reify easy $ \p -> unreflectF2 p (testProperty name) test1

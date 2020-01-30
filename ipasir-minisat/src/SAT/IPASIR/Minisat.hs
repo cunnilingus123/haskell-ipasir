@@ -1,47 +1,32 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
 
-module SAT.IPASIR.Minisat where
+module SAT.IPASIR.Minisat 
+  ( CMinisat
+  , cminisat
+  ) where
 
 -- | A low-level Haskell wrapper around the MiniSat-All library.
 
-import Foreign
-import Foreign.C.Types
-import Control.Monad (when, liftM2, liftM3)
-import Control.Monad.Loops 
-import Data.Proxy
-import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
-import Data.IORef
+import Foreign (Ptr, ForeignPtr, FinalizerPtr, newForeignPtr, withForeignPtr, newArray, advancePtr, free)
+import Foreign.C.Types (CInt(..), CChar(..), CBool(..))
+import Data.Proxy (Proxy(..))
+import Data.Array (listArray)
+import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
+import Data.List (findIndices)
 
-import SAT.IPASIR.IpasirApi
-import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT(..))
-import SAT.IPASIR.ComplexityProblem
-
-
-
--- Some Testing
-import SAT.IPASIR.Solver
-import Debug.Trace
-
-g1 = do
-  s1 <- newIterativeSolver :: IO Minisat
-  s2 <- addEncoding s1 [[1,2,3,4],[-2,-3],[-1,-5]]
-  assume s2 (-3)
-  s3 <- addEncoding s2 [[-1,-5]]
-  assume s3 4
-  assume s3 5
-  solve s3
+import SAT.IPASIR.Solver(Solver(..), IncrementalSolver(..), incrementalSolution)
+import SAT.IPASIR.ComplexityProblemInstances (LBool(..), GeneralSAT(..))
 
 -- ----------------------------------------------------------------------
 -- * Some types
 
 -- | An abstract type for the solver.
 data CSolver = CSolver
-data HSolver = HSolver (ForeignPtr CSolver) (IORef [CInt]) (Ptr CChar)
-type Minisat = IpasirSolver HSolver
-minisat :: Proxy Minisat
-minisat = Proxy
+newtype CMinisat = CMinisat (ForeignPtr CSolver)
+cminisat :: Proxy CMinisat
+cminisat = Proxy
 
 -- ----------------------------------------------------------------------
 -- * Conversions
@@ -94,21 +79,18 @@ foreign import ccall unsafe "solver.h solver_setnvars"
   cSolverSetNVars :: Ptr CSolver -> CInt -> IO ()
 
 foreign import ccall unsafe "solver.h ipasirVal"
-  cIpasirVal :: Ptr CSolver -> CInt -> IO CInt
+  cIpasirVal :: Ptr CSolver -> CInt -> IO CChar
 
 -- lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
 foreign import ccall unsafe "solver.h solver_solution"
   cSolverSolution :: Ptr CSolver -> IO CChar
-
-foreign import ccall unsafe "solver.h solver_copy"
-  cCopySolver :: Ptr CSolver -> IO (Ptr CSolver)
 
 cChartoLBool :: CChar -> LBool
 cChartoLBool 1 = LTrue
 cChartoLBool 0 = LUndef
 cChartoLBool _ = LFalse
 
-withSP (HSolver p _ _) = generalizedWithForeignPtr p
+withSP (CMinisat p) = generalizedWithForeignPtr p
 
 class ForeignFunction b where
     generalizedWithForeignPtr :: ForeignPtr a -> (Ptr a -> b) -> b
@@ -119,90 +101,31 @@ instance ForeignFunction (IO a) where
 instance (ForeignFunction b) => ForeignFunction (a -> b) where
     generalizedWithForeignPtr s f x = generalizedWithForeignPtr s $ flip f x
 
-instance Ipasir HSolver where
-  ipasirGetID (HSolver p _ _) = toEnum $ fromEnum $ ptrToIntPtr $ unsafeForeignPtrToPtr p
-  ipasirInit = liftM3 HSolver (newForeignPtr cDelSolverGC =<< cNewSolver) 
-                              (newIORef [])
-                              (return nullPtr)
-  ipasirNumberVars s = withSP s cSolverNVars
-  ipasirSolve s@(HSolver p assumptions lastSol) = do
-    ass <- readIORef assumptions
-    b <- if null ass
-      then withSP s cSolverSolution
-      else do
-        traceM "Haskell 1"
-        cs <- withSP s cCopySolver
-        traceM "Haskell 2"
-        mapM_ (addClause cs . pure) ass 
-        traceM "Haskell 3"
-        b <- cSolverSolution cs
-        traceM "Haskell 4"
-        cDelSolver cs
-        traceM "Haskell 5"
-        writeIORef assumptions []
-        traceM "Haskell 6"
-        return b
-    pure $ case b of
-      1 -> LTrue
-      0 -> LUndef
-      _ -> LFalse
-  ipasirAddClause s = withSP s addClause 
-  ipasirAssume (HSolver p ass _) a = modifyIORef ass (a:)
-  ipasirVal s = withSP s cIpasirVal
-  ipasirFailed s i = (/=0) <$> withSP s cIpasirVal i
+instance Solver CMinisat where
+  type CPS CMinisat = GeneralSAT CInt LBool [CInt] ()
+  solution = incrementalSolution
 
-addClause :: Ptr CSolver -> [CInt] -> IO ()
-addClause ptr clause = do
+instance IncrementalSolver CMinisat where
+  type MonadIS CMinisat = IO
+  newIterativeSolver = CMinisat <$> (newForeignPtr cDelSolverGC =<< cNewSolver)
+  addEncoding s enc = s <$ addClause s `mapM_` enc
+  assume s () = pure s
+  solve s = do 
+    b <- withSP s cSolverSolution
+    maxi <- withSP s cSolverNVars
+    case cChartoLBool b of
+      LTrue  -> fmap Right $ sequence $ listArray (1,maxi) $ getVal s <$> [1..maxi]
+      LUndef -> error "CMinisat gave LUndef, which shouldn't be possible."
+      LFalse -> Left . map toEnum . findIndices (/=LUndef) <$> getVal s `mapM` [1..maxi]
+  unwrapMonadForNonIterative _ = unsafePerformIO
+  interleaveMonad _ = unsafeInterleaveIO
+
+getVal :: CMinisat -> CInt -> IO LBool
+getVal s i = cChartoLBool <$> withSP s cIpasirVal i
+
+addClause :: CMinisat -> [CInt] -> IO ()
+addClause s clause = do
   startPtr <- newArray $ map toLit clause
   let endPtr = advancePtr startPtr $ length clause
-  b <- cSolverAddClause ptr startPtr endPtr -- cnf became trivial if b is true
+  b <- withSP s cSolverAddClause startPtr endPtr -- cnf became trivial if b is true
   free startPtr
-
-
-f1 = ipasirInit :: IO HSolver
-
-f2 = do 
-  x <- f1
-  ipasirAddClause x [1,-2]
-  ipasirAddClause x [2,-3]
-  ipasirAddClause x [3,-4]
-  ipasirAddClause x [4,-5]
-  ipasirAddClause x [5,-1]
-  ipasirAssume x (-1)
-  return x
-
-f2' = do 
-  x <- f2
-  ipasirAssume x 4
-  return x
-
-f3 = do 
-  x <- f1
-  ipasirAddClause x [1,-2]
-  ipasirAddClause x [-1,-2]
-  ipasirAddClause x [2]
-  ipasirAddClause x [-1,2]
-  return x
-
-f4 = do
-  x <- f1
-  ipasirAddClause x [1, -3]
-  ipasirAddClause x [2,3,-1]
-  return x
-
-f5 = do 
-  x <- f4
-  ipasirAssume x 1
-  ipasirAssume x 3
-  solveReady x
-
-solveReady x = 
-  whileM ((==LTrue) <$> ipasirSolve x) $ do
-    sol <- ipasirSolution x
-    print sol
-    ipasirAddClause x $ head $ negSolutionToEncoding (Proxy :: Proxy (SAT CInt LBool)) sol
-
-unc f x y = do 
-  a <- f x 
-  b <- f y
-  return (a,b)

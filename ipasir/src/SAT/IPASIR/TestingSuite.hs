@@ -58,7 +58,7 @@ createTest _ validate (ProgramS (Program coms))
     looper s encs assp []     = pure True 
     looper s encs assp (SolveNow:xs) = do
         res <- solve s
-        traceM $ show res
+    --    traceM $ show res
         l'  <- looper s encs [] xs
         return $ validate encs assp res && l'
     looper s encs assp (AddEncoding e : xs) = do

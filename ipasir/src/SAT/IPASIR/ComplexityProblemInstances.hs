@@ -7,6 +7,7 @@ module SAT.IPASIR.ComplexityProblemInstances where
 import Data.Array
 import Data.Ix (Ix(..))
 import Data.Bifunctor (bimap)
+import Foreign.C.Types (CInt)
 
 import SAT.IPASIR.ComplexityProblem
 
@@ -31,7 +32,9 @@ data FastSAT (m :: * -> *) e b = FastSAT
 --   [SAT-Problem](https://en.wikipedia.org/wiki/Boolean_satisfiability_problem)
 --   with variables of type e (will be an 'Enum' and 'Ix').
 --   The 'Solution' is expressed using b (either 'Bool' or 'LBool').
-data SAT e b = SAT
+type SAT e b = GeneralSAT e b [e] e
+
+data GeneralSAT e b c a = GeneralSAT
 
 -- | This reduction changes the 'Enum' representing the variables of the 
 --   SAT-formula.
@@ -47,11 +50,11 @@ instance (Enum e, Ix e, Monad m) => ComplexityProblem (FastSAT m e b) where
     type Conflict (FastSAT m e b) = e -> m Bool
     type Assumption (FastSAT m e b) = e
 
-instance (Enum e, Ix e) => ComplexityProblem (SAT e b) where
-    type Encoding (SAT e b) = [[e]]
-    type Solution (SAT e b) = Array e b
-    type Conflict (SAT e b) = [e]
-    type Assumption (SAT e b) = e
+instance (Enum e, Ix e) => ComplexityProblem (GeneralSAT e b c a) where
+    type Encoding (GeneralSAT e b c a) = [[e]]
+    type Solution (GeneralSAT e b c a) = Array e b
+    type Conflict (GeneralSAT e b c a) = c
+    type Assumption (GeneralSAT e b c a) = a
 
 instance (Enum e, Ix e, Num e) => Solutiontransform (SAT e LBool) where
     solutionToEncoding    _ = map pure . sol2Enc ((*) . parseEnum)
@@ -91,3 +94,11 @@ instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
 
 parseEnum :: (Enum a, Enum b) => a -> b
 parseEnum = toEnum . fromEnum
+
+instance Ix CInt where
+    range (from, to) = [from..to]
+    index (from, to) i
+      | inRange (from, to) i = fromEnum $ i - from
+      | otherwise            = error $ "Index out of bounds Exception. Index:" 
+                                        ++ show i ++ " Bounds: " ++ show (from,to)
+    inRange (from, to) i = i >= from && i <= to

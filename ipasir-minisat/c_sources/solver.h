@@ -101,8 +101,7 @@ extern void    solver_setnvars(solver* s,int n);
 //  - nof_learnts = (int) (solver_nclauses(s) / 3)
 // I guess it means something like "when is it time to stop learning clauses and simplify?"
 extern lbool   solver_solution(solver* s);
-extern int     ipasirVal(solver* s, int lit);
-extern solver* solver_copy(solver*);
+extern lbool   ipasirVal(solver* s, int lit);
 
 // ------ End made by Gerrit ------
 
@@ -178,8 +177,6 @@ struct solver_t
 
     lbool*   solution;      // By Gerrit
     bool     blocking;      // By Gerrit
-    bool     assumptionBlock; // By Gerrit
-    bool     isCopy;        // By Gerrit
 };
 
 #endif

@@ -77,3 +77,4 @@ instance (Reduction r1, Reduction r2, CPFrom r2 ~ CPTo r1) => Reduction (r2 👉
     parseSolution   (r2 :👉 r1) = parseSolution   r1  .  parseSolution   r2
     parseConflict   (r2 :👉 r1) = parseConflict   r1  .  parseConflict   r2
     parseAssumption (r2 :👉 r1) = parseAssumption r2 <=< parseAssumption r1
+

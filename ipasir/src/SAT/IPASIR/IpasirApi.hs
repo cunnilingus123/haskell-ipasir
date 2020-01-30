@@ -15,14 +15,6 @@ import qualified SAT.IPASIR.ComplexityProblemInstances as CP
 type IDType  = Word
 type Var     = CInt
 
-instance Ix CInt where
-    range (from, to) = [from..to]
-    index (from, to) i
-      | inRange (from, to) i = fromEnum $ i - from
-      | otherwise            = error $ "Index out of bounds Exception. Index:" 
-                                        ++ show i ++ " Bounds: " ++ show (from,to)
-    inRange (from, to) i = i >= from && i <= to
-
 {-|
     Class that models the <https://github.com/biotomas/ipasir/blob/master/ipasir.h ipasir.h> interface.
     This class is meant to be implemented using foreign function interfaces to the actual C solver.

@@ -124,14 +124,10 @@ static inline void    vecp_remove(vecp* v, void* e)
 {
     void** ws = vecp_begin(v);
     int    j  = 0;
-    printf("vecp_remove 1\n");
     for (; ws[j] != e  ; j++);
-    printf("vecp_remove 2\n");
     assert(j < vecp_size(v));
     for (; j < vecp_size(v)-1; j++) ws[j] = ws[j+1];
-    printf("vecp_remove 3\n");
     vecp_resize(v,vecp_size(v)-1);
-    printf("vecp_remove 4\n");
 }
 
 static inline lit solver_assumedlit(solver *s, int level) {return s->trail[veci_begin(&s->trail_lim)[level-1]];}
@@ -328,20 +324,14 @@ static clause* clause_new(solver* s, lit* begin, lit* end, int learnt)
 
 static void clause_remove(solver* s, clause* c)
 {
-    printf("clause_remove 1\n");
     lit* lits = clause_begin(c);
     assert(lit_neg(lits[0]) < s->size*2);
     assert(lit_neg(lits[1]) < s->size*2);
-    
     //vecp_remove(solver_read_wlist(s,lit_neg(lits[0])),(void*)c);
     //vecp_remove(solver_read_wlist(s,lit_neg(lits[1])),(void*)c);
-    printf("clause_remove 2\n");
     assert(lits[0] < s->size*2);
-    printf("clause_remove 3\n");
     vecp_remove(solver_read_wlist(s,lit_neg(lits[0])),(void*)(clause_size(c) > 2 ? c : clause_from_lit(lits[1])));
-    printf("clause_remove 4\n");
     vecp_remove(solver_read_wlist(s,lit_neg(lits[1])),(void*)(clause_size(c) > 2 ? c : clause_from_lit(lits[0])));
-    printf("clause_remove 5\n");
     if (clause_learnt(c)){
         s->stats.learnts--;
         s->stats.learnts_literals -= clause_size(c);
@@ -349,9 +339,7 @@ static void clause_remove(solver* s, clause* c)
         s->stats.clauses--;
         s->stats.clauses_literals -= clause_size(c);
     }
-    printf("clause_remove 6\n");
     free(c);
-    printf("clause_remove 7\n");
 }
 
 
@@ -453,11 +441,8 @@ static inline void assume(solver* s, lit l){
 #ifdef VERBOSEDEBUG
     printf(L_IND"assume("L_LIT")\n", L_ind, L_lit(l));
 #endif
- //   printf("Before rl=%i dl=%i", s->root_level, solver_dlevel(s));
     veci_push(&s->trail_lim,s->qtail);
- //   printf("Middle rl=%i dl=%i", s->root_level, solver_dlevel(s));
     enqueue(s,l,(clause*)0);
- //   printf("After rl=%i dl=%i\n", s->root_level, solver_dlevel(s));
 }
 
 
@@ -627,7 +612,6 @@ static void solver_analyze(solver* s, clause* c, veci* learnt)
                 act_clause_bump(s,c);
 
             lits = clause_begin(c);
-            //printlits(lits,lits+clause_size(c)); printf("\n");
             for (j = (p == lit_Undef ? 0 : 1); j < clause_size(c); j++){
                 lit q = lits[j];
                 assert(lit_var(q) >= 0 && lit_var(q) < s->size);
@@ -716,7 +700,6 @@ clause* solver_propagate(solver* s)
     clause* confl  = (clause*)0;
     lit*    lits;
 
-    //printf("solver_propagate\n");
     while (confl == 0 && s->qtail - s->qhead > 0){
         lit  p  = s->trail[s->qhead++];
         vecp* ws = solver_read_wlist(s,p);
@@ -727,7 +710,6 @@ clause* solver_propagate(solver* s)
         s->stats.propagations++;
         s->simpdb_props--;
 
-        //printf("checking lit %d: "L_LIT"\n", veci_size(ws), L_lit(p));
         for (i = j = begin; i < end; ){
             if (clause_is_lit(*i)){
                 *j++ = *i;
@@ -753,7 +735,6 @@ clause* solver_propagate(solver* s)
                     lits[1] = false_lit;
                 }
                 assert(lits[1] == false_lit);
-                //printf("checking clause: "); printlits(lits, lits+clause_size(*i)); printf("\n");
 
                 // If 0th watch is true, then clause is already satisfied.
                 sig = !lit_sign(lits[0]); sig += sig - 1;
@@ -817,10 +798,6 @@ void solver_reducedb(solver* s)
         else
             learnts[j++] = learnts[i];
     }
-
-    //printf("reducedb deleted %d\n", vecp_size(&s->learnts) - j);
-
-
     vecp_resize(&s->learnts,j);
 }
 
@@ -977,38 +954,29 @@ lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
     int     conflictC       = 0;
     veci    learnt_clause;
 
-   // printf("in search rl=%i dl=%i\n", s->root_level, solver_dlevel(s));
-   // assert(s->root_level == solver_dlevel(s));
+    assert(s->root_level == solver_dlevel(s));
 
     s->stats.starts++;
     s->var_decay = (float)(1 / var_decay   );
     s->cla_decay = (float)(1 / clause_decay);
     veci_new(&learnt_clause);
-    printf("solver_search 1\n");
     for (;;){
-        printf("solver_search 2\n");
 		if (eflag == 1) return l_False;
         clause* confl = solver_propagate(s);
-        printf("solver_search 3\n");
         if (confl != 0){
             // CONFLICT
             int blevel;
-            printf("solver_search 4\n");
-
 #ifdef VERBOSEDEBUG
             printf(L_IND"**CONFLICT**\n", L_ind);
 #endif
             s->stats.conflicts++; conflictC++;
             if (solver_dlevel(s) <= s->root_level){
-                printf("solver_search 5\n");
                 memcpy(s->solution, s->assigns, solver_nvars(s) * sizeof(lbool));
                 veci_delete(&learnt_clause);
                 return l_False; // changed to l_True.
                                 /* But I changed it back! */
             }
-            printf("solver_search 6\n");
             veci_resize(&learnt_clause,0);
-            printf("solver_search 7\n");
             solver_analyze(s, confl, &learnt_clause);
             blevel = veci_size(&learnt_clause) > 1 ? levels[lit_var(veci_begin(&learnt_clause)[1])] : s->root_level;
             blevel = s->root_level > blevel ? s->root_level : blevel;
@@ -1016,11 +984,8 @@ lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
             solver_record(s,&learnt_clause);
             act_var_decay(s);
             act_clause_decay(s);
-            printf("solver_search 8\n");
-
         }else{
             // NO CONFLICT
-            printf("solver_search 9\n");
             int next;
 
             /*if (nof_conflicts >= 0 && conflictC >= nof_conflicts){ // restart is disabled.
@@ -1029,21 +994,14 @@ lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
                 solver_canceluntil(s,s->root_level);
                 veci_delete(&learnt_clause);
                 return l_Undef; }*/
-            printf("solver_search 9_1\n");
             if (solver_dlevel(s) == 0) {
-                printf("solver_search 9_2\n");
                 // Simplify the set of problem clauses:
                 solver_simplify(s);
-                printf("solver_search 9_3\n");
             }
-            printf("solver_search 9_4\n");
             if (nof_learnts >= 0 && vecp_size(&s->learnts) - s->qtail >= nof_learnts){
                 // Reduce the set of learnt clauses:
-                printf("solver_search 9_5\n");
                 solver_reducedb(s);
-                printf("solver_search 9_6\n");
             }
-            printf("solver_search 10\n");
             // New variable decision:
             s->stats.decisions++;
 
@@ -1054,7 +1012,6 @@ lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
 #else // use variable selection heuristic
             next = order_select(s,(float)random_var_freq);
 #endif
-            printf("solver_search 11\n");
 
             if (next == var_Undef) {
 #ifdef VERBOSEDEBUG
@@ -1087,13 +1044,11 @@ lbool solver_search(solver* s, int nof_conflicts, int nof_learnts)
                     }
                     fprintf(s->out, "0\n");
                 }
-                printf("solver_search 12\n");
                 if (veci_size(&s->blkcls) == 0) {
                     memcpy(s->solution, s->assigns, solver_nvars(s) * sizeof(lbool));
                     veci_delete(&learnt_clause);
                     return l_True;
                 }
-                printf("solver_search 13\n");
 #else /*NO SIMPLIFY*/
                 veci_resize(&s->blkcls,0);
                 for (int i = solver_dlevel(s); i > s->root_level; i--)
@@ -1238,8 +1193,6 @@ solver* solver_new(void)
     s->stats.max_literals     = 0;
     s->stats.tot_literals     = 0;
     s->blocking               = 0;
-    s->assumptionBlock        = 0;
-    s->isCopy                 = 0;
 
 #ifdef GMP
     mpz_init(s->stats.tot_solutions);
@@ -1272,8 +1225,7 @@ void solver_delete(solver* s)
     veci_delete(&s->tagged);
     veci_delete(&s->stack);
     veci_delete(&s->blkcls);
-    if(!s->isCopy)
-        free(s->binary);
+    free(s->binary);
 
 #ifdef GMP
     mpz_clear(s->stats.tot_solutions);
@@ -1296,13 +1248,9 @@ void solver_delete(solver* s)
         free(s->levels   );
         free(s->trail    );
         free(s->tags     );
-
-        if(!s->isCopy){
-            free(s->solution );
-            free(s->reasons  );
-        }
+        free(s->solution );
+        free(s->reasons  );
     }
-
     free(s);
 }
 
@@ -1370,57 +1318,40 @@ bool solver_addclause(solver* s, lit* begin, lit* end)
 
 bool   solver_simplify(solver* s)
 {
-    printf("solver_simplify 1\n");
     clause** reasons;
     int type;
 
     assert(solver_dlevel(s) == 0);
-    printf("solver_simplify 2\n");
     if (solver_propagate(s) != 0)
         return false;
-    printf("solver_simplify 3\n");
     if (s->qhead == s->simpdb_assigns || s->simpdb_props > 0)
         return true;
-    printf("solver_simplify 4\n");
     reasons = s->reasons;
-    printf("solver_simplify 5\n");
     for (type = 0; type < 2; type++){
-        printf("solver_simplify 6\n");
         vecp*    cs  = type ? &s->learnts : &s->clauses;
         clause** cls = (clause**)vecp_begin(cs);
-        printf("solver_simplify 7\n");
         int i, j;
         int k = s->norigclauses;
-        printf("solver_simplify 8\n");
         for (j = i = 0; i < vecp_size(cs); i++){
-            printf("solver_simplify 8_1\n");
             if (reasons[lit_var(*clause_begin(cls[i]))] != cls[i] &&
                 clause_simplify(s,cls[i]) == l_True) {
-                printf("solver_simplify 8_2\n");
                 clause_remove(s,cls[i]);
-                printf("solver_simplify 8_3\n");
                 if(!type && i < k) s->norigclauses--;
-                printf("solver_simplify 8_4\n");
             } else{
                 cls[j++] = cls[i];
-                printf("solver_simplify 8_5\n");
             }
         }
-        printf("solver_simplify 9\n");
         vecp_resize(cs,j);
     }
-    printf("solver_simplify 10\n");
     s->simpdb_assigns = s->qhead;
     // (shouldn't depend on 'stats' really, but it will do for now)
     s->simpdb_props   = (int)(s->stats.clauses_literals + s->stats.learnts_literals);
-    printf("solver_simplify 11\n");
     return true;
 }
 
 
 bool   solver_solve(solver* s, lit* begin, lit* end)
 {
-    printf("in solver_solve\n");
     double  nof_conflicts = 100;
     double  nof_learnts   = solver_nclauses(s) / 3;
     lbool   status        = l_Undef;
@@ -1478,7 +1409,6 @@ bool   solver_solve(solver* s, lit* begin, lit* end)
             fflush(stdout);
         }*/
         status = solver_search(s,(int)nof_conflicts, (int)nof_learnts);
-        printf("State: %i\n",status);
         //nof_conflicts *= 1.5;
         //nof_learnts   *= 1.1;
     }
@@ -1570,13 +1500,7 @@ extern lbool solver_solution(solver* s){
     if( s->blocking )
         return l_False;
 
-    if( s->assumptionBlock ){
-        s->assumptionBlock = 0;
-        return l_False;
-    }
-    printf("Solver_Solution 1\n");
     lbool b = solver_search(s, 100, solver_nclauses(s) / 3);
-    printf("Solver_Solution 2\n");
     if ( b == l_Undef ){
         return l_True;
     } else {
@@ -1585,11 +1509,9 @@ extern lbool solver_solution(solver* s){
     }
 }
 
-int ipasirVal(solver* s, int lit){
+lbool ipasirVal(solver* s, int lit){
     if(lit == 0) return 0;
-    int abs = lit >= 0 ? lit : -lit;
-    lbool b = s->solution[abs-1]; 
-    return abs * b;
+    return s->solution[lit-1];
 }
 
 void* alloccpy( void* src, int size ){
@@ -1597,105 +1519,4 @@ void* alloccpy( void* src, int size ){
     memcpy(res,src,size);
     return res;
 }
-
-
-clause* clause_copy(clause* c){
-    printf("clause_copy 1\n");
-    int size = clause_size(c);
-    printf("clause_copy 2\n");
-    int learnt = clause_learnt(c);
-    printf("clause_copy 3\n");
-    lit* begin = clause_begin(c);
-    printf("clause_copy 4\n");
-    lit* end  = begin + size;
-    printf("clause_copy 5\n");
-
-    clause* t= (clause*)malloc(sizeof(clause) + sizeof(lit) * size + learnt * sizeof(float));
-    printf("clause_copy 6\n");
-    t->size_learnt = (size << 1) | learnt;
-    assert(((uintptr_t)t & 1) == 0);
-    printf("clause_copy 7\n");
-    for (int i = 0; i < size; i++)
-        t->lits[i] = begin[i];
-    printf("clause_copy 8\n");
-
-    if (learnt)
-        *((float*)&t->lits[size]) = 0.0;
-    printf("clause_copy 9\n");
-    
-    return t;
-}
-
-solver* solver_copy(solver* s){
-    solver* t = (solver*)malloc(sizeof(solver));
-    memcpy(t,s,sizeof(solver)); // flat copy
-
-    vecp_copy(&s->clauses,  &t->clauses);
-    vecp_copy(&s->learnts,  &t->learnts);
-
-    for (int i = 0; i < vecp_size(&s->clauses); i++)
-       // free(vecp_begin(&s->clauses)[i]);
-       vecp_begin(&t->clauses)[i] = clause_copy((clause*) vecp_begin(&s->clauses)[i]);
-
-    for (int i = 0; i < vecp_size(&s->learnts); i++)
-       // free(vecp_begin(&s->learnts)[i]);
-       vecp_begin(&t->learnts)[i] = clause_copy((clause*) vecp_begin(&s->learnts)[i]);
-
-    veci_copy(&s->order,    &t->order);
-    veci_copy(&s->trail_lim,&t->trail_lim);
-    veci_copy(&s->tagged,   &t->tagged);
-    veci_copy(&s->stack,    &t->stack);
-    veci_copy(&s->blkcls,   &t->blkcls);
-
-    t->out = NULL;
-    t->isCopy = 1;
-
-    t->activity = (double*) alloccpy(s->activity, sizeof(double)*s->cap);
-    t->assigns  = (lbool*)  alloccpy(s->assigns,  sizeof(lbool)*s->cap);
-    t->chosen   = (lbool*)  alloccpy(s->chosen,   sizeof(lbool)*s->cap);
-    t->orderpos = (int*)    alloccpy(s->orderpos, sizeof(int)*s->cap);
-    t->levels   = (int*)    alloccpy(s->levels,   sizeof(int)*s->cap);
-    t->tags     = (lbool*)  alloccpy(s->tags,     sizeof(lbool)*s->cap);
-    t->trail    = (lit*)    alloccpy(s->trail,    sizeof(lit)*s->cap);
-    t->binary   = (clause*) alloccpy(s->binary,   sizeof(clause) + sizeof(lit)*2);
-    // t->solution = (lbool*)  alloccpy(s->solution, sizeof(lbool)*s->cap);
-    printf("solver_copy 1\n");
-    t->wlists = (vecp*) malloc(sizeof(vecp)*s->cap*2);
-    for(int var = 0; var < 2*s->size; var++){
-        int breaker = 0;
-        for(int i = 0; i < solver_nclauses(s); i++){
-            clause* c1 = vecp_begin(&s->wlists[var])[i];
-            clause* c2 = vecp_begin(&s->clauses)[i];
-            if( c1 == c2 ){
-                t->wlists[var] = t->clauses;
-                breaker = 1;
-                break;
-            }
-        }
-        if(breaker)
-            continue;
-        vecp_copy(&s->wlists[var],  &t->wlists[var]);
-    }
-    printf("solver_copy 2\n");
-    // only medium deep
-    //t->reasons   = (clause**)alloccpy(s->reasons,  sizeof(clause*)*s->cap);
-    t->reasons = (clause**) malloc(sizeof(clause*)*s->cap);
-    printf("solver_copy 3\n");
-    for(int i = 0; i < solver_nvars(s); i++){
-        printf("solver_copy 4\n");
-        if( s->reasons[i] != 0 )
-            t->reasons[i] = clause_copy( s->reasons[i] );
-        else
-            t->reasons[i] = (clause*) 0;
-        printf("solver_copy 5\n");
-    }
-    printf("solver_copy 6\n");
-  /*
-    Deep copy missing
-    FILE*    out;
-  */  
-    return t;
-}
-
-
 // End made by Gerrit
