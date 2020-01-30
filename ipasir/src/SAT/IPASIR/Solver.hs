@@ -5,8 +5,9 @@
 
 module SAT.IPASIR.Solver where
 
-import Data.Either (isRight)
+import Data.Bifunctor (bimap)
 import Data.Proxy (Proxy(Proxy))
+import Data.Maybe (isJust)
 import Control.Monad (foldM)
 
 import SAT.IPASIR.ComplexityProblem
@@ -20,7 +21,7 @@ class (ComplexityProblem (CPS s)) => Solver s where
     solution    :: Proxy s -> Encoding (CPS s) -> Result (CPS s)
     -- | Same as checking if the result of 'solution' is a 'Solution'.
     satisfiable :: Proxy s -> Encoding (CPS s) -> Bool
-    satisfiable s e = isRight $ solution s e
+    satisfiable s e = isJust $ solution s e
 
 class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     -- | The Monad the @IncrementalSolver@ works in.
@@ -31,7 +32,6 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     addEncoding        :: s -> Encoding (CPS s) -> MonadIS s s
     -- | Starts the solving process and gives back the result. See 'Result'.
     solve              :: s -> MonadIS s (Result (CPS s))
-    assume             :: s -> Assumption (CPS s) -> MonadIS s s
     -- | If the monad is "IO" you might want to implement this
     --   function by 'System.IO.Unsafe.unsafePerformIO' or 
     --   'System.IO.Unsafe.unsafeDupablePerformIO'.
@@ -42,6 +42,10 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     --   you might want to set this function to
     --   'System.IO.Unsafe.unsafeInterleaveIO'.
     interleaveMonad            :: Proxy s -> MonadIS s a -> MonadIS s a
+
+class (IncrementalSolver s, AssumingProblem (CPS s)) => AssumingSolver s where
+    assume        :: s -> Assumption (CPS s) -> MonadIS s ()
+    solveConflict :: s -> MonadIS s (Either (Conflict (CPS s)) (Solution (CPS s)))
 
 -- | If you want to instantiate 'Solver' you can use this 
 --   function as a standard implementation for 'solution'.
@@ -65,8 +69,8 @@ solveAll s encoding = unwrapMonadForNonIterative s $ do
     looper solver = do
         res <- solve solver :: MonadIS s (Result (CPS s))
         case res of
-            Left  _   -> pure []
-            Right sol -> do
+            Nothing   -> pure []
+            Just sol -> do
                 solver' <- addEncoding solver 
                             $ negSolutionToEncoding (Proxy :: Proxy (CPS s)) sol
                 sols <- interleaveMonad s $ looper solver'
@@ -74,7 +78,7 @@ solveAll s encoding = unwrapMonadForNonIterative s $ do
 
 instance (Reduction r, Solver s, CPS s ~ CPTo r) => Solver (r 👉 s) where
     type CPS (r 👉 s) = CPFrom r
-    solution _ encoding = parseResult red $ solution (Proxy :: Proxy s) enc
+    solution _ encoding = parseSolution red <$> solution (Proxy :: Proxy s) enc
         where
             (enc, red) = parseEncoding (newReduction :: r) encoding
     satisfiable _ encoding = satisfiable (Proxy :: Proxy s) enc
@@ -89,7 +93,11 @@ instance (Reduction r, IncrementalSolver s, CPS s ~ CPTo r)
         let (encoding', r') = parseEncoding r encoding 
         s' <- addEncoding s encoding'
         return (r' :👉 s')
-    solve (r :👉 s) = parseResult r <$> solve s
-    assume (r :👉 s) ass = fmap (r :👉) $ foldM assume s $ parseAssumption r ass
+    solve (r :👉 s) = fmap (parseSolution r) <$> solve s
     unwrapMonadForNonIterative _ = unwrapMonadForNonIterative (Proxy :: Proxy s)
     interleaveMonad _            = interleaveMonad (Proxy :: Proxy s)
+
+instance (AReduction r, AssumingSolver s, CPS s ~ CPTo r) 
+          => AssumingSolver (r 👉 s) where
+    assume (r :👉 s) ass = assume s `mapM_` parseAssumption r ass
+    solveConflict (r :👉 s) = bimap (parseConflict r) (parseSolution r) <$> solveConflict s

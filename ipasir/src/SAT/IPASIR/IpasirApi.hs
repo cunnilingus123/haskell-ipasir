@@ -2,7 +2,7 @@
 
 module SAT.IPASIR.IpasirApi where
 
-import Data.Array (Array, array)
+import Data.Array (Array, listArray)
 import Data.Ix (Ix(..))
 import Foreign.C.Types (CInt)
 import Control.Monad (forM_)
@@ -63,16 +63,6 @@ class Ipasir a where
     ipasirAddClause :: a -> [Var] -> IO ()
 
     {-|
-     Add an assumption for the next @SAT@ search (the next call
-     of 'ipasirSolve'). After calling 'ipasirSolve' all the
-     previously added assumptions are cleared.
-
-     * Required state: @INPUT@ or @SAT@ or @UNSAT@
-     * State after: @INPUT@
-    -}
-    ipasirAssume :: a -> Var -> IO ()
-
-    {-|
      Solve the formula with specified clauses under the specified assumptions.
      If the formula is satisfiable the function returns @LTrue@ and the state of the solver is changed to @SAT@.
      If the formula is unsatisfiable the function returns @LFalse@ and the state of the solver is changed to @UNSAT@.
@@ -114,43 +104,7 @@ class Ipasir a where
     ipasirSolution :: a -> IO (Array Var LBool)
     ipasirSolution solver = do
         maxi <- ipasirNumberVars solver
-        let sol = array (1,maxi) [ (var, enumToLBool <$> ipasirVal solver var) | var <- [1..maxi]]
-        sequence sol
-    
-    {-|
-     Check if the given assumption literal was used to prove the
-     unsatisfiability of the formula under the assumptions
-     used for the last @SAT@ search. Return @True@ if so, @False@ otherwise.
-     This function can only be used if 'ipasirSolve' has returned @LFalse@ and
-     no 'ipasirAdd' or 'ipasirAssume' has been called since then, i.e.,
-     the state of the solver is @UNSAT@.
-
-     * Required state: @UNSAT@
-     * State after: @UNSAT@
-    -}
-    ipasirFailed :: a -> Var -> IO Bool
-    
-    {-|
-      Returns every variable, which was involved in the found conflict. The returned
-      vector is sorted and distinct. It holds that
-      
-      @ elem i (ipasirConflict' s) == ipasirFailed' s i -- ignored the IO-monad  @
-      
-      * Required state: @UNSAT@
-      * State after: @UNSAT@
-    -}
-    ipasirConflict :: a -> IO [Var]
-    ipasirConflict solver = do
-        maxi <- ipasirNumberVars solver
-        filter (/=0) <$> sequence (ipasirConflict' maxi 1)
-        where
-            ipasirConflict' :: Var -> Var -> [IO Var]
-            ipasirConflict' maxi i 
-                | i > maxi  = []
-                | otherwise = (replaceFalse i <$> ipasirFailed solver i) : ipasirConflict' maxi (succ i)
-            replaceFalse :: Num e => e -> Bool -> e
-            replaceFalse _ False = 0
-            replaceFalse x _     = x
+        sequence $ listArray (1,maxi) [ enumToLBool <$> ipasirVal solver var | var <- [1..maxi]]
 
 {-|
     byIpasirAdd creates a 'ipasirAddClause' function using an
@@ -180,6 +134,52 @@ byIpasirAdd ipasirAdd solver l = do
     ipasirAdd solver `mapM_` l
     ipasirAdd solver 0
 
+class (Ipasir a) => IpasirAssume a where
+    {-|
+     Add an assumption for the next @SAT@ search (the next call
+     of 'ipasirSolve'). After calling 'ipasirSolve' all the
+     previously added assumptions are cleared.
+
+     * Required state: @INPUT@ or @SAT@ or @UNSAT@
+     * State after: @INPUT@
+    -}
+    ipasirAssume :: a -> Var -> IO ()
+
+    {-|
+     Check if the given assumption literal was used to prove the
+     unsatisfiability of the formula under the assumptions
+     used for the last @SAT@ search. Return @True@ if so, @False@ otherwise.
+     This function can only be used if 'ipasirSolve' has returned @LFalse@ and
+     no 'ipasirAdd' or 'ipasirAssume' has been called since then, i.e.,
+     the state of the solver is @UNSAT@.
+
+     * Required state: @UNSAT@
+     * State after: @UNSAT@
+    -}
+    ipasirFailed :: a -> Var -> IO Bool
+
+    {-|
+      Returns every variable, which was involved in the found conflict. The returned
+      vector is sorted and distinct. It holds that
+      
+      @ elem i (ipasirConflict' s) == ipasirFailed' s i -- ignored the IO-monad  @
+      
+      * Required state: @UNSAT@
+      * State after: @UNSAT@
+    -}
+    ipasirConflict :: a -> IO [Var]
+    ipasirConflict solver = do
+        maxi <- ipasirNumberVars solver
+        filter (/=0) <$> sequence (ipasirConflict' maxi 1)
+        where
+            ipasirConflict' :: Var -> Var -> [IO Var]
+            ipasirConflict' maxi i 
+                | i > maxi  = []
+                | otherwise = (replaceFalse i <$> ipasirFailed solver i) : ipasirConflict' maxi (succ i)
+            replaceFalse :: Num e => e -> Bool -> e
+            replaceFalse _ False = 0
+            replaceFalse x _     = x
+
 -- | This datatype makes an instance of 'Ipasir' to an instance of 'IncrementalSolver'.
 newtype IpasirSolver i = IpasirSolver i
 
@@ -196,11 +196,26 @@ instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     addEncoding (IpasirSolver ip) sat = do
         forM_ sat $ ipasirAddClause ip
         return $ IpasirSolver ip
-    solve = solving $ \ip -> ipasirSolution ip
-    assume (IpasirSolver ip) ass = IpasirSolver ip <$ ipasirAssume ip ass
+    solve (IpasirSolver ip) = do
+        b <- ipasirSolve ip
+        case b of
+            LTrue  -> Just <$> ipasirSolution ip
+            LFalse -> return Nothing
+            LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
+                            "This can happen if you terminate the solver by using " ++
+                            "ipasir_set_terminate (see ipasir.h)\n" 
     unwrapMonadForNonIterative _  = unsafePerformIO
     interleaveMonad _ = unsafeInterleaveIO
 
+instance (IpasirAssume i) => AssumingSolver (IpasirSolver i) where
+    assume (IpasirSolver ip) = ipasirAssume ip
+    solveConflict s@(IpasirSolver ip) = do
+        sol <- solve s
+        case sol of
+            Just s  -> return $ Right s
+            Nothing -> Left <$> ipasirConflict ip
+
+{-
 solving :: Ipasir t => (t -> IO b) -> IpasirSolver t -> IO (Either [Var] b)
 solving satCase (IpasirSolver ip) = do
     b <- ipasirSolve ip
@@ -210,3 +225,4 @@ solving satCase (IpasirSolver ip) = do
                           "This can happen if you terminate the solver by using " ++
                           "ipasir_set_terminate (see ipasir.h)\n" 
         LTrue  -> Right <$> satCase ip
+-}

@@ -16,31 +16,18 @@ import Data.Maybe (mapMaybe)
 import Data.Array (Array(..), assocs, (!))
 import Data.Ix (Ix(..))
 
-import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT)
-import SAT.IPASIR.ComplexityProblem (ComplexityProblem(..), Result, Solutiontransform(..))
 import SAT.IPASIR.Solver
-
-import Foreign.C.Types
-import SAT.IPASIR.IpasirApi ()
-import Debug.Trace
-
-
-assu' :: RefiedArbitrary [[CInt]] CInt
-assu' = createSatArbitrary 7 1 SingleAssumtionBeforeSolve EveryVarUsed NormalClause
-
-deb :: (IncrementalSolver s, CPS s ~ SAT CInt LBool)
-    => Proxy s -> IO ()
-deb solver = do 
-    prog <- generate $ genProgram assu'
-    print prog
-    print $ createTest solver (checkSatEncsAssumpt LFalse LTrue) prog
-    return ()
-
-
+import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT)
+import SAT.IPASIR.ComplexityProblem
+    ( ComplexityProblem(..)
+    , Result
+    , Solutiontransform(..)
+    , AssumingProblem(..)
+    )
 
 -- TODO Replace when the FreeMonad is made.
-createTest  :: forall s cp e a r m t.
-               ( IncrementalSolver s
+createAssumingTest  :: forall s cp e a r m t.
+               ( AssumingSolver s
                , Show r
                , cp ~ CPS s
                , e ~ Encoding cp
@@ -49,7 +36,7 @@ createTest  :: forall s cp e a r m t.
                , m ~ MonadIS s
                ) 
             => Proxy s -> ([e] -> [a] -> r -> Bool) -> ProgramS t e a  -> Bool
-createTest _ validate (ProgramS (Program coms))
+createAssumingTest _ validate (ProgramS (Program coms))
     = unwrapMonadForNonIterative (Proxy :: Proxy s) $ do
         s <- newIterativeSolver :: m s
         looper s [] [] coms
@@ -68,6 +55,32 @@ createTest _ validate (ProgramS (Program coms))
         assume s a
         looper s encs (a:assp) xs
 
+createIncrementalTest  :: forall s cp e a r m t.
+               ( IncrementalSolver s
+               , Show r
+               , cp ~ CPS s
+               , e ~ Encoding cp
+               , r ~ Result cp
+               , m ~ MonadIS s
+               ) 
+            => Proxy s -> ([e] -> [a] -> r -> Bool) -> ProgramS t e a  -> Bool
+createIncrementalTest _ validate (ProgramS (Program coms))
+    = unwrapMonadForNonIterative (Proxy :: Proxy s) $ do
+        s <- newIterativeSolver :: m s
+        looper s [] [] coms
+  where
+    looper :: s -> [e] -> [a] -> [Command e a] -> m Bool
+    looper s encs assp []     = pure True 
+    looper s encs assp (SolveNow:xs) = do
+        res <- solve s
+        l'  <- looper s encs [] xs
+        return $ validate encs assp res && l'
+    looper s encs assp (AddEncoding e : xs) = do
+        s' <- addEncoding s e
+        looper s' (e:encs) assp xs 
+    looper s encs assp (AssumeSomething a : xs) = 
+        error "this solver can't assume."
+
 checkSatSolution :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
                  => b -> b -> [[e]] -> Array e b -> Bool
 checkSatSolution f t encoding solution = all checkC encoding 
@@ -82,8 +95,8 @@ checkSatSolution f t encoding solution = all checkC encoding
 
 checkSatResult :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
                  => b -> b -> [[e]] -> Result (SAT e b) -> Bool
-checkSatResult f t enc (Left _) = True
-checkSatResult f t enc (Right s) = checkSatSolution f t enc s
+checkSatResult f t enc Nothing  = True
+checkSatResult f t enc (Just s) = checkSatSolution f t enc s
 
 checkSatEncsAssumpt :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
                  => b -> b -> [[[e]]] -> [e] -> Result (SAT e b) -> Bool

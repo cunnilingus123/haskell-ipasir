@@ -6,25 +6,26 @@ module SAT.IPASIR.Minisat
   ( CMinisat
   , cminisat
   ) where
-
--- | A low-level Haskell wrapper around the MiniSat-All library.
-
-import Foreign (Ptr, ForeignPtr, FinalizerPtr, newForeignPtr, withForeignPtr, newArray, advancePtr, free)
-import Foreign.C.Types (CInt(..), CChar(..), CBool(..))
+    
 import Data.Proxy (Proxy(..))
 import Data.Array (listArray)
-import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
 import Data.List (findIndices)
+import Foreign (Ptr, ForeignPtr, FinalizerPtr, newForeignPtr, withForeignPtr, newArray, advancePtr, free, ptrToIntPtr)
+import Foreign.C.Types (CInt(..), CChar(..), CBool(..))
+import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
+import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
 
-import SAT.IPASIR.Solver(Solver(..), IncrementalSolver(..), incrementalSolution)
-import SAT.IPASIR.ComplexityProblemInstances (LBool(..), GeneralSAT(..))
+--import SAT.IPASIR.Solver(Solver(..), IncrementalSolver(..), incrementalSolution)
+import SAT.IPASIR.IpasirApi 
+import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT(..))
 
 -- ----------------------------------------------------------------------
 -- * Some types
 
 -- | An abstract type for the solver.
 data CSolver = CSolver
-newtype CMinisat = CMinisat (ForeignPtr CSolver)
+newtype HSolver = HSolver (ForeignPtr CSolver)
+type CMinisat = IpasirSolver HSolver
 cminisat :: Proxy CMinisat
 cminisat = Proxy
 
@@ -90,7 +91,7 @@ cChartoLBool 1 = LTrue
 cChartoLBool 0 = LUndef
 cChartoLBool _ = LFalse
 
-withSP (CMinisat p) = generalizedWithForeignPtr p
+withSP (HSolver p) = generalizedWithForeignPtr p
 
 class ForeignFunction b where
     generalizedWithForeignPtr :: ForeignPtr a -> (Ptr a -> b) -> b
@@ -101,31 +102,22 @@ instance ForeignFunction (IO a) where
 instance (ForeignFunction b) => ForeignFunction (a -> b) where
     generalizedWithForeignPtr s f x = generalizedWithForeignPtr s $ flip f x
 
-instance Solver CMinisat where
-  type CPS CMinisat = GeneralSAT CInt LBool [CInt] ()
-  solution = incrementalSolution
+instance Ipasir HSolver where
+  ipasirGetID (HSolver p) = toEnum $ fromEnum $ ptrToIntPtr $ unsafeForeignPtrToPtr p
+  ipasirInit = HSolver <$> (newForeignPtr cDelSolverGC =<< cNewSolver)
+  ipasirNumberVars s = withSP s cSolverNVars
+  ipasirSolve s@(HSolver p) = cChartoLBool <$> withSP s cSolverSolution
+  ipasirAddClause s clause = do
+    startPtr <- newArray $ map toLit clause
+    let endPtr = advancePtr startPtr $ length clause
+    b <- withSP s cSolverAddClause startPtr endPtr -- cnf became trivial if b is true
+    free startPtr
+  ipasirVal s v = do
+    let a = abs v
+    c <- withSP s cIpasirVal a
+    return $ a * ccharToCInt c
 
-instance IncrementalSolver CMinisat where
-  type MonadIS CMinisat = IO
-  newIterativeSolver = CMinisat <$> (newForeignPtr cDelSolverGC =<< cNewSolver)
-  addEncoding s enc = s <$ addClause s `mapM_` enc
-  assume s () = pure s
-  solve s = do 
-    b <- withSP s cSolverSolution
-    maxi <- withSP s cSolverNVars
-    case cChartoLBool b of
-      LTrue  -> fmap Right $ sequence $ listArray (1,maxi) $ getVal s <$> [1..maxi]
-      LUndef -> error "CMinisat gave LUndef, which shouldn't be possible."
-      LFalse -> Left . map toEnum . findIndices (/=LUndef) <$> getVal s `mapM` [1..maxi]
-  unwrapMonadForNonIterative _ = unsafePerformIO
-  interleaveMonad _ = unsafeInterleaveIO
-
-getVal :: CMinisat -> CInt -> IO LBool
-getVal s i = cChartoLBool <$> withSP s cIpasirVal i
-
-addClause :: CMinisat -> [CInt] -> IO ()
-addClause s clause = do
-  startPtr <- newArray $ map toLit clause
-  let endPtr = advancePtr startPtr $ length clause
-  b <- withSP s cSolverAddClause startPtr endPtr -- cnf became trivial if b is true
-  free startPtr
+ccharToCInt :: CChar -> CInt
+ccharToCInt 1 = 1
+ccharToCInt 0 = 0
+ccharToCInt _ = -1
