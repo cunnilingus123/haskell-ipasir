@@ -50,9 +50,9 @@ public:
     
     void setComparator(Comparator comparator);
     
-    virtual void printGeq(bool stderr = false) const;
-    virtual void print(bool stderr = false) const;
-    virtual void printNoNL(bool stderr = false) const;
+    virtual void printGeq(bool hugo = false) const;
+    virtual void print(bool hugo = false) const;
+    virtual void printNoNL(bool hugo = false) const;
 };
 }
 #endif // PBCONSTRAINT_H
