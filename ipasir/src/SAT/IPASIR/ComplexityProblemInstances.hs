@@ -58,7 +58,6 @@ instance (Enum e, Ix e, Num e) => Solutiontransform (SAT e Bool) where
 sol2Enc :: (Enum e, Ix e, Num e, Enum b) => (b -> e -> e) -> Array e b -> [e]
 sol2Enc f = filter (/=0) . map (uncurry (flip f)) . assocs
 
-
 -- | This reduction changes the Boolean type from 'Bool' to 'LBool'.
 data SATRedLBoolBool e = SATRedLBoolBool
 

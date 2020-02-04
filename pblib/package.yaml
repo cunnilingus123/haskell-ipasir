@@ -1,0 +1,114 @@
+name:                pblib
+version:             0.1.0.0
+github:              "githubuser/pblib"
+license:             BSD3
+author:              "Gerrit Marquardt"
+maintainer:          "example@example.com"
+copyright:           "2020 Author name here"
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/ipasir-minisat#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- transformers
+
+extra-libraries: stdc++
+
+library:
+  source-dirs: src
+  include-dirs: cxx_sources
+  cxx-sources:
+     - cxx_sources/pblib_c.cpp
+     - cxx_sources/IncSimplePBConstraint.cpp
+     - cxx_sources/PBParser.cpp
+     - cxx_sources/clausedatabase.cpp
+     - cxx_sources/incpbconstraint.cpp
+     - cxx_sources/IncrementalData.cpp
+     - cxx_sources/SimplePBConstraint.cpp
+     - cxx_sources/formula.cpp
+     - cxx_sources/pb2cnf.cpp
+     - cxx_sources/preencoder.cpp
+     - cxx_sources/PBConfig.cpp
+     - cxx_sources/VectorClauseDatabase.cpp
+     - cxx_sources/pbconstraint.cpp
+     - cxx_sources/auxvarmanager.cpp
+     - cxx_sources/helper.cpp
+     - cxx_sources/pbencoder.cpp
+     - cxx_sources/encoder/BDD_Seq_Amo.cpp
+     - cxx_sources/encoder/Encoder.cpp
+     - cxx_sources/encoder/SortingNetworks.cpp
+     - cxx_sources/encoder/amo.cpp
+     - cxx_sources/encoder/bimander_amo_encoding.cpp
+     - cxx_sources/encoder/cardencoding.cpp
+     - cxx_sources/encoder/k-product.cpp
+     - cxx_sources/encoder/sorting_merging.cpp
+     - cxx_sources/encoder/BinaryMerge.cpp
+     - cxx_sources/encoder/SWC.cpp
+     - cxx_sources/encoder/adderencoding.cpp
+     - cxx_sources/encoder/bdd.cpp
+     - cxx_sources/encoder/binary_amo.cpp
+     - cxx_sources/encoder/commander_encoding.cpp
+     - cxx_sources/encoder/naive_amo_encoder.cpp
+  #   - cxx_sources/PBFuzzer.cpp
+  #   - cxx_sources/fuzzer.cpp
+  #   - cxx_sources/pbo2maxsat.cpp
+
+#executables:
+#  pb:
+#    main: Main.hs
+#    source-dirs: src
+#    include-dirs: cxx_sources
+#    cxx-sources:
+#     - cxx_sources/pblib_c.cpp
+#     - cxx_sources/IncSimplePBConstraint.cpp
+#     - cxx_sources/PBParser.cpp
+#     - cxx_sources/clausedatabase.cpp
+#     - cxx_sources/incpbconstraint.cpp
+#     - cxx_sources/IncrementalData.cpp
+#     - cxx_sources/SimplePBConstraint.cpp
+#     - cxx_sources/formula.cpp
+#     - cxx_sources/pb2cnf.cpp
+#     - cxx_sources/preencoder.cpp
+#     - cxx_sources/PBConfig.cpp
+#     - cxx_sources/VectorClauseDatabase.cpp
+#     - cxx_sources/pbconstraint.cpp
+#     - cxx_sources/auxvarmanager.cpp
+#     - cxx_sources/helper.cpp
+#     - cxx_sources/pbencoder.cpp
+#     - cxx_sources/encoder/BDD_Seq_Amo.cpp
+#     - cxx_sources/encoder/Encoder.cpp
+#     - cxx_sources/encoder/SortingNetworks.cpp
+#     - cxx_sources/encoder/amo.cpp
+#     - cxx_sources/encoder/bimander_amo_encoding.cpp
+#     - cxx_sources/encoder/cardencoding.cpp
+#     - cxx_sources/encoder/k-product.cpp
+#     - cxx_sources/encoder/sorting_merging.cpp
+#     - cxx_sources/encoder/BinaryMerge.cpp
+#     - cxx_sources/encoder/SWC.cpp
+#     - cxx_sources/encoder/adderencoding.cpp
+#     - cxx_sources/encoder/bdd.cpp
+#     - cxx_sources/encoder/binary_amo.cpp
+#     - cxx_sources/encoder/commander_encoding.cpp
+#     - cxx_sources/encoder/naive_amo_encoder.cpp
+  #   - cxx_sources/PBFuzzer.cpp
+  #   - cxx_sources/fuzzer.cpp
+  #   - cxx_sources/pbo2maxsat.cpp
+
+tests:
+  ipasir-minisat-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - pblib
+
