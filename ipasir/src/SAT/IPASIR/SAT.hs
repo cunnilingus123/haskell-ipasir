@@ -2,13 +2,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module SAT.IPASIR.ComplexityProblemInstances
-    ( LBool (..)
-    , enumToLBool
-    , SAT (..)
+module SAT.IPASIR.SAT
+    ( SAT (..)
     , SATRedLBoolBool (..)
     , SATRedBoolLBool (..)
     , SATRedEnum (..)
+    , module Export
     ) where
 
 import Data.Array (Array, assocs, bounds, ixmap)
@@ -16,22 +15,7 @@ import Data.Ix (Ix(..))
 import Data.Bifunctor (bimap)
 import Foreign.C.Types (CInt)
 
-import SAT.IPASIR.ComplexityProblem
-
-data LBool = LFalse | LUndef | LTrue
-    deriving (Show, Eq, Ord)
-
-instance Enum LBool where
-    toEnum = enumToLBool
-    fromEnum LTrue  =  1
-    fromEnum LUndef =  0
-    fromEnum _      = -1
-
-enumToLBool :: (Ord a, Num a) => a -> LBool
-enumToLBool i = case compare i 0 of
-    GT -> LTrue
-    EQ -> LUndef
-    _  -> LFalse
+import SAT.IPASIR.ComplexityProblem as Export
 
 -- | A representative of the 
 --   [SAT-Problem](https://en.wikipedia.org/wiki/Boolean_satisfiability_problem)
@@ -52,8 +36,8 @@ instance (Enum e, Ix e, Num e) => Solutiontransform (SAT e LBool) where
     negSolutionToEncoding x =     pure . map negate . sol2Enc ((*) . parseEnum)
 
 instance (Enum e, Ix e, Num e) => Solutiontransform (SAT e Bool) where
-    solutionToEncoding    _ =        map pure   . sol2Enc ((*) . pred . (*2) . parseEnum)
-    negSolutionToEncoding x = pure . map negate . sol2Enc ((*) . pred . (*2) . parseEnum)
+    solutionToEncoding    _ = map pure              . sol2Enc ((*) . pred . (*2) . parseEnum)
+    negSolutionToEncoding x =     pure . map negate . sol2Enc ((*) . pred . (*2) . parseEnum)
 
 sol2Enc :: (Enum e, Ix e, Num e, Enum b) => (b -> e -> e) -> Array e b -> [e]
 sol2Enc f = filter (/=0) . map (uncurry (flip f)) . assocs

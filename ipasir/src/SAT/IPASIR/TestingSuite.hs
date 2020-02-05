@@ -17,15 +17,15 @@ import Data.Array (Array(..), assocs, (!))
 import Data.Ix (Ix(..))
 
 import SAT.IPASIR.Solver
-import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT)
+import SAT.IPASIR.SAT (SAT)
 import SAT.IPASIR.ComplexityProblem
     ( ComplexityProblem(..)
     , Result
     , Solutiontransform(..)
     , AssumingProblem(..)
+    , LBool(..)
     )
 
--- TODO Replace when the FreeMonad is made.
 createAssumingTest  :: forall s cp e a r m t.
                ( AssumingSolver s
                , Show r
@@ -36,26 +36,10 @@ createAssumingTest  :: forall s cp e a r m t.
                , m ~ MonadIS s
                ) 
             => Proxy s -> ([e] -> [a] -> r -> Bool) -> ProgramS t e a  -> Bool
-createAssumingTest _ validate (ProgramS (Program coms))
-    = unwrapMonadForNonIterative (Proxy :: Proxy s) $ do
-        s <- newIterativeSolver :: m s
-        looper s [] [] coms
-  where
-    looper :: s -> [e] -> [a] -> [Command e a] -> m Bool
-    looper s encs assp []     = pure True 
-    looper s encs assp (SolveNow:xs) = do
-        res <- solve s
-    --    traceM $ show res
-        l'  <- looper s encs [] xs
-        return $ validate encs assp res && l'
-    looper s encs assp (AddEncoding e : xs) = do
-        s' <- addEncoding s e
-        looper s' (e:encs) assp xs 
-    looper s encs assp (AssumeSomething a : xs) = do
-        assume s a
-        looper s encs (a:assp) xs
+createAssumingTest s validate (ProgramS (Program coms))
+    = unwrapSolverMonad s $ looper assume validate [] [] coms
 
-createIncrementalTest  :: forall s cp e a r m t.
+createIncrementalTest :: forall s cp e a r m t.
                ( IncrementalSolver s
                , Show r
                , cp ~ CPS s
@@ -64,22 +48,28 @@ createIncrementalTest  :: forall s cp e a r m t.
                , m ~ MonadIS s
                ) 
             => Proxy s -> ([e] -> [a] -> r -> Bool) -> ProgramS t e a  -> Bool
-createIncrementalTest _ validate (ProgramS (Program coms))
-    = unwrapMonadForNonIterative (Proxy :: Proxy s) $ do
-        s <- newIterativeSolver :: m s
-        looper s [] [] coms
+createIncrementalTest s validate (ProgramS (Program coms))
+    = unwrapSolverMonad s $ looper assume' validate [] [] coms
   where
-    looper :: s -> [e] -> [a] -> [Command e a] -> m Bool
-    looper s encs assp []     = pure True 
-    looper s encs assp (SolveNow:xs) = do
-        res <- solve s
-        l'  <- looper s encs [] xs
-        return $ validate encs assp res && l'
-    looper s encs assp (AddEncoding e : xs) = do
-        s' <- addEncoding s e
-        looper s' (e:encs) assp xs 
-    looper s encs assp (AssumeSomething a : xs) = 
-        error "this solver can't assume."
+    assume' _ = error "this solver can't assume."
+
+looper :: forall s cp e a r. 
+    ( IncrementalSolver s
+    , cp ~ CPS s
+    , e ~ Encoding cp
+    , r ~ Result cp
+    ) => (a -> SolverMonad s ()) -> ([e] -> [a] -> r -> Bool) -> [e] -> [a] -> [Command e a] -> SolverMonad s Bool
+looper assume' validate encs assp []            = pure True 
+looper assume' validate encs assp (SolveNow:xs) = do
+    res <- solve
+    l'  <- interleaveSolverMonad (Proxy :: Proxy s) $ looper assume' validate encs [] xs
+    return $ validate encs assp res && l'
+looper assume' validate encs assp (AddEncoding e : xs) = do
+    addEncoding e
+    looper assume' validate (e:encs) assp xs 
+looper assume' validate encs assp (AssumeSomething a : xs) = do
+    assume' a
+    looper assume' validate encs (a:assp) xs
 
 checkSatSolution :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
                  => b -> b -> [[e]] -> Array e b -> Bool
@@ -91,7 +81,7 @@ checkSatSolution f t encoding solution = all checkC encoding
         return $ negate h `elem` t
     check lit
       | lit < 0   = solution ! abs lit == f
-      | otherwise = solution ! lit     == t
+      | otherwise = solution !     lit == t
 
 checkSatResult :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
                  => b -> b -> [[e]] -> Result (SAT e b) -> Bool

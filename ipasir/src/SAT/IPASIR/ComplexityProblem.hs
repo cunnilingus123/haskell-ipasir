@@ -7,8 +7,23 @@
 module SAT.IPASIR.ComplexityProblem where
 
 import Data.Proxy (Proxy(..))
-import Data.Bifunctor (bimap)
+import Data.Bifunctor (Bifunctor(..))
 import Control.Monad ((<=<))
+
+data LBool = LFalse | LUndef | LTrue
+    deriving (Show, Eq, Ord)
+
+instance Enum LBool where
+    toEnum = enumToLBool
+    fromEnum LTrue  =  1
+    fromEnum LUndef =  0
+    fromEnum _      = -1
+
+enumToLBool :: (Ord a, Num a) => a -> LBool
+enumToLBool i = case compare i 0 of
+    GT -> LTrue
+    EQ -> LUndef
+    _  -> LFalse
 
 class ComplexityProblem cp where
     type Encoding cp
@@ -27,8 +42,11 @@ type Result cp = Maybe (Solution cp)
 -- 'SAT.IPASIR.Solver.Solver', an 'SAT.IPASIR.Solver.IncrementalSolver' or
 -- 'Reduction', then 'r 👉 s' fullfills the same constraints like 's'.
 data r 👉 s = r :👉 s
-infixr 3 👉
-infixr 3 :👉
+infixl 3 👉
+infixl 3 :👉
+
+instance Bifunctor (👉) where
+    bimap f g (r :👉 s) = f r :👉 g s
 
 -- | A subclass of 'ComplexityProblem' which can make encodings
 --   for a certain solution or makes an encoding, which refuses

@@ -25,7 +25,7 @@ dependencies:
 - array
 - QuickCheck
 - reflection
-- pblib
+- transformers
 
 library:
   source-dirs: src

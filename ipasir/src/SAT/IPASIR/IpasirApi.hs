@@ -7,10 +7,12 @@ import Data.Ix (Ix(..))
 import Foreign.C.Types (CInt)
 import Control.Monad (forM_)
 import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
+import Control.Monad.Trans.State
+import Control.Monad.Trans.Class (lift)
 
 import SAT.IPASIR.Solver
-import SAT.IPASIR.ComplexityProblemInstances (LBool(..), enumToLBool)
-import qualified SAT.IPASIR.ComplexityProblemInstances as CP
+import SAT.IPASIR.SAT (LBool(..), enumToLBool)
+import qualified SAT.IPASIR.SAT as SAT
 
 type IDType  = Word
 type Var     = CInt
@@ -184,7 +186,7 @@ class (Ipasir a) => IpasirAssume a where
 newtype IpasirSolver i = IpasirSolver i
 
 -- | The complexity problem of an instance of Ipasir' is always 'CP.SAT' 'CInt' 'CP.LBool'
-type IpasirCP = CP.SAT Var CP.LBool
+type IpasirCP = SAT.SAT Var SAT.LBool
 
 instance (Ipasir i) => Solver (IpasirSolver i) where
     type CPS (IpasirSolver i) = IpasirCP
@@ -193,36 +195,22 @@ instance (Ipasir i) => Solver (IpasirSolver i) where
 instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     type MonadIS (IpasirSolver i) = IO
     newIterativeSolver = IpasirSolver <$> ipasirInit
-    addEncoding (IpasirSolver ip) sat = do
-        forM_ sat $ ipasirAddClause ip
-        return $ IpasirSolver ip
-    solve (IpasirSolver ip) = do
-        b <- ipasirSolve ip
-        case b of
-            LTrue  -> Just <$> ipasirSolution ip
-            LFalse -> return Nothing
-            LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
-                            "This can happen if you terminate the solver by using " ++
-                            "ipasir_set_terminate (see ipasir.h)\n" 
+    addEncoding sat = liftSolverMonad $ \(IpasirSolver ip) -> forM_ sat $ ipasirAddClause ip
+    solve = liftSolverMonad $ \(IpasirSolver ip) -> do
+            b <- ipasirSolve ip
+            case b of
+                LTrue  -> Just <$> ipasirSolution ip
+                LFalse -> return Nothing
+                LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
+                                "This can happen if you terminate the solver by using " ++
+                                "ipasir_set_terminate (see ipasir.h)\n" 
     unwrapMonadForNonIterative _  = unsafePerformIO
     interleaveMonad _ = unsafeInterleaveIO
 
 instance (IpasirAssume i) => AssumingSolver (IpasirSolver i) where
-    assume (IpasirSolver ip) = ipasirAssume ip
-    solveConflict s@(IpasirSolver ip) = do
-        sol <- solve s
+    assume ass = liftSolverMonad $ \(IpasirSolver ip) -> ipasirAssume ip ass
+    solveConflict = do
+        sol <- solve
         case sol of
-            Just s  -> return $ Right s
-            Nothing -> Left <$> ipasirConflict ip
-
-{-
-solving :: Ipasir t => (t -> IO b) -> IpasirSolver t -> IO (Either [Var] b)
-solving satCase (IpasirSolver ip) = do
-    b <- ipasirSolve ip
-    case b of
-        LFalse -> Left <$> ipasirConflict ip 
-        LUndef -> error $ "The solver returned LUndef on a solving process.\n" ++
-                          "This can happen if you terminate the solver by using " ++
-                          "ipasir_set_terminate (see ipasir.h)\n" 
-        LTrue  -> Right <$> satCase ip
--}
+            Just s  -> pure $ Right s
+            Nothing -> liftSolverMonad $ \(IpasirSolver ip) -> Left <$> ipasirConflict ip
