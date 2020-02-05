@@ -9,8 +9,11 @@ import Data.Bifunctor (bimap)
 import Data.Proxy (Proxy(Proxy))
 import Data.Maybe (isJust)
 import Control.Monad (foldM)
+import SAT.PseudoBoolean.C.Types.WeightedLit
 
 import SAT.IPASIR.ComplexityProblem
+
+t a b = new_WeightedLit (toEnum a) (toEnum b)
 
 class (ComplexityProblem (CPS s)) => Solver s where
     -- | The 'ComplexityProblem' this solver can solve.

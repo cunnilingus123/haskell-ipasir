@@ -25,6 +25,8 @@ dependencies:
 - array
 - QuickCheck
 - reflection
+- pblib
+
 library:
   source-dirs: src
 
