@@ -1,4 +1,4 @@
-module Main
+module SAT.PseudoBoolean
     ( module Export
     , C.CardinalityMethod
     , C.Comp(..)
@@ -8,7 +8,6 @@ module Main
     , encodeNewGeq
     , encodeNewLeq
     , getClauses
-    , main
     ) where
 
 import Control.Monad.Trans.Class
@@ -48,7 +47,3 @@ encodeNewLeq bound = withEncoder (`C.encodeNewLeq` bound)
 
 getClauses :: Encoder [[Int]]
 getClauses = withEncoder return
-
-main = do
-    p <- new_WeightedLit 2 3
-    print p
