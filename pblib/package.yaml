@@ -58,9 +58,6 @@ library:
      - cxx_sources/encoder/binary_amo.cpp
      - cxx_sources/encoder/commander_encoding.cpp
      - cxx_sources/encoder/naive_amo_encoder.cpp
-  #   - cxx_sources/PBFuzzer.cpp
-  #   - cxx_sources/fuzzer.cpp
-  #   - cxx_sources/pbo2maxsat.cpp
 
 #executables:
 #  pb:
@@ -99,9 +96,6 @@ library:
 #     - cxx_sources/encoder/binary_amo.cpp
 #     - cxx_sources/encoder/commander_encoding.cpp
 #     - cxx_sources/encoder/naive_amo_encoder.cpp
-  #   - cxx_sources/PBFuzzer.cpp
-  #   - cxx_sources/fuzzer.cpp
-  #   - cxx_sources/pbo2maxsat.cpp
 
 tests:
   ipasir-minisat-test:
