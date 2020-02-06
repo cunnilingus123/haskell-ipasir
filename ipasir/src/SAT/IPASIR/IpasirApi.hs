@@ -7,15 +7,12 @@ import Data.Ix (Ix(..))
 import Foreign.C.Types (CInt)
 import Control.Monad (forM_)
 import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
-import Control.Monad.Trans.State
-import Control.Monad.Trans.Class (lift)
 
 import SAT.IPASIR.Solver
-import SAT.IPASIR.SAT (LBool(..), enumToLBool)
-import qualified SAT.IPASIR.SAT as SAT
+import SAT.IPASIR.SAT (LBool(..), enumToLBool, SAT(..))
 
-type IDType  = Word
-type Var     = CInt
+type IDType = Word
+type Var    = CInt
 
 {-|
     Class that models the <https://github.com/biotomas/ipasir/blob/master/ipasir.h ipasir.h> interface.
@@ -186,7 +183,7 @@ class (Ipasir a) => IpasirAssume a where
 newtype IpasirSolver i = IpasirSolver i
 
 -- | The complexity problem of an instance of Ipasir' is always 'CP.SAT' 'CInt' 'CP.LBool'
-type IpasirCP = SAT.SAT Var SAT.LBool
+type IpasirCP = SAT Var LBool
 
 instance (Ipasir i) => Solver (IpasirSolver i) where
     type CPS (IpasirSolver i) = IpasirCP
@@ -195,7 +192,7 @@ instance (Ipasir i) => Solver (IpasirSolver i) where
 instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     type MonadIS (IpasirSolver i) = IO
     newIterativeSolver = IpasirSolver <$> ipasirInit
-    addEncoding (SAT.SAT e) = liftSolverMonad $ \(IpasirSolver ip) -> forM_ e $ ipasirAddClause ip
+    addEncoding (SAT e) = liftSolverMonad $ \(IpasirSolver ip) -> forM_ e $ ipasirAddClause ip
     solve = liftSolverMonad $ \(IpasirSolver ip) -> do
             b <- ipasirSolve ip
             case b of

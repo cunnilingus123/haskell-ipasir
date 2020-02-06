@@ -12,8 +12,11 @@ module SAT.IPASIR.SAT
 
 import Data.Array (Array, assocs, bounds, ixmap)
 import Data.Ix (Ix(..))
-import Data.Bifunctor (bimap)
+import Data.Bifunctor (Bifunctor(..))
+import Data.Set (fromList)
+import Data.Function (on)
 import Foreign.C.Types (CInt)
+
 
 import SAT.IPASIR.ComplexityProblem as Export
 
@@ -21,7 +24,16 @@ import SAT.IPASIR.ComplexityProblem as Export
 --   [SAT-Problem](https://en.wikipedia.org/wiki/Boolean_satisfiability_problem)
 --   with variables of type e (will be an 'Enum').
 --   The 'Solution' is expressed using b (either 'Bool' or 'LBool').
+--   Note that the 'Eq' instance is defined by: a == b iff every clause in a
+--   is a sublist of a clause in b and vice versa.
 newtype SAT e b = SAT {satInstance :: [[e]]}
+    deriving (Show, Read)
+
+instance Ord e => Eq (SAT e b) where
+    SAT a == SAT b = on (==) (fromList . map fromList)  a b
+
+instance Bifunctor SAT where
+    bimap f _ (SAT cnf) = SAT $ (map . map) f cnf
 
 instance (Enum e, Ix e) => ComplexityProblem (SAT e b) where
     type Solution (SAT e b) = Array e b
@@ -48,7 +60,7 @@ instance (Enum e, Ix e) => Reduction (SATRedLBoolBool e) where
     type CPFrom (SATRedLBoolBool e) = SAT e LBool
     type CPTo   (SATRedLBoolBool e) = SAT e Bool
     newReduction    = SATRedLBoolBool
-    parseEncoding _ = (, SATRedLBoolBool) . SAT . satInstance
+    parseEncoding _ = (, SATRedLBoolBool) . second undefined
     parseSolution _ = fmap boolToLBool
         where
             boolToLBool :: Bool -> LBool
@@ -67,7 +79,7 @@ instance (Enum e, Ix e) => Reduction (SATRedBoolLBool e) where
     type CPFrom (SATRedBoolLBool e) = SAT e Bool
     type CPTo   (SATRedBoolLBool e) = SAT e LBool
     newReduction    = SATRedBoolLBool
-    parseEncoding _ = (, SATRedBoolLBool) . SAT . satInstance
+    parseEncoding _ = (, SATRedBoolLBool) . second undefined
     parseSolution _ = fmap lboolToBool
         where
             lboolToBool :: LBool -> Bool
@@ -86,7 +98,7 @@ instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
     type CPFrom (SATRedEnum e i b) = SAT e b
     type CPTo   (SATRedEnum e i b) = SAT i b
     newReduction = SATRedEnum
-    parseEncoding _ (SAT e) = (SAT $ (map . map) parseEnum e, SATRedEnum)
+    parseEncoding _ = (,SATRedEnum) . first parseEnum 
     parseSolution _ = mapIndex parseEnum
         where
             mapIndex :: (Ix e, Enum e, Ix i, Enum i) => (e -> i) -> Array i a -> Array e a

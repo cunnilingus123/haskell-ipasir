@@ -14,7 +14,7 @@ instance Storable a => Storable (CVector a) where
     alignment = sizeOf
     peek ptr = do
         len <- peek (castPtr ptr)
-        arrayPtr <- peekByteOff (castPtr ptr) (sizeOf (undefined :: CSize))
+        arrayPtr <- peekByteOff ptr $ sizeOf (undefined :: CSize)
         if  arrayPtr == nullPtr
             then return $ CVector []
             else CVector <$> peekArray len arrayPtr

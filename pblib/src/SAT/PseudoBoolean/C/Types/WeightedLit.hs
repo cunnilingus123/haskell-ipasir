@@ -1,5 +1,7 @@
 module SAT.PseudoBoolean.C.Types.WeightedLit where
 
+import SAT.PseudoBoolean.Config (coerceEnum)
+
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.C.Types
@@ -13,7 +15,7 @@ data WeightedLit = WeightedLit
 ($-$) = weightedLit
 
 weightedLit :: (Enum l, Integral w) => l -> w -> WeightedLit
-weightedLit l w = WeightedLit (toEnum $ fromEnum l) (fromInteger $ toInteger w)
+weightedLit l w = WeightedLit (coerceEnum l) (fromInteger $ toInteger w)
 
 instance Storable WeightedLit where
     sizeOf _ = sizeOf (undefined :: Ptr WeightedLit)

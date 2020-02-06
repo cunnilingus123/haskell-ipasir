@@ -98,6 +98,16 @@ void free_C_Encoder(C_Encoder* e) {
     delete e;
 };
 
+void free_C_Clauses(C_Clauses* cnf) {
+    for (int i = 0; i < cnf->size; i++){
+        C_Clause* clause = &(cnf->clauses[i]);
+        delete clause->literals;
+        delete clause;
+    } 
+    delete cnf->clauses;
+    delete cnf;
+};
+
 void c_encodeNewGeq(C_Encoder* e, int64_t newGeq) {
     e->constraint->encodeNewGeq(newGeq, *(e->clauseDb), *(e->auxManager));
 }

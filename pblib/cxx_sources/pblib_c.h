@@ -60,6 +60,7 @@ C_Encoder* new_C_Encoder(
     int32_t first_free_variable);
 
 void free_C_Encoder(C_Encoder* ptr);
+void free_C_Clauses(C_Clauses* cnf);
 
 void c_encodeNewGeq(C_Encoder* constraint, int64_t newGeq);
 void c_encodeNewLeq(C_Encoder* constraint, int64_t newLeq);

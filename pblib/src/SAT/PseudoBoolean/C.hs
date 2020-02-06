@@ -1,10 +1,9 @@
 module SAT.PseudoBoolean.C
-    ( encoder
-    , encodeNewGeq
-    , encodeNewLeq
-    , getClauses
+    ( cencoder
+    , cencodeNewGeq
+    , cencodeNewLeq
+    , cgetClauses
     , Comp(..)
-    , module Export
     , C_Encoder
     ) where
 
@@ -22,10 +21,10 @@ import Foreign.Marshal.Array
 
 import GHC.Generics
 
-import SAT.PseudoBoolean.C.Types as Export
+import SAT.PseudoBoolean.C.Types.WeightedLit
+import SAT.PseudoBoolean.C.Types.CVector
 import SAT.PseudoBoolean.C.Bindings
 import SAT.PseudoBoolean.Config
-
 
 data Comp
     = CLeq
@@ -33,55 +32,53 @@ data Comp
     | CBoth
         deriving (Show, Eq, Enum, Ord)
 
-coerceEnum :: (Enum a, Enum b) => a -> b
-coerceEnum = toEnum . fromEnum
-
-encoder :: CardinalityMethod a => Config a -> [WeightedLit] -> Comp -> Int64 -> Int64 -> Int -> IO (ForeignPtr C_Encoder)
-encoder config lits comp lowerBound upperBound firstFreeLit = do
+cencoder :: Config -> [WeightedLit] -> Comp -> Int -> Int -> Int -> IO (ForeignPtr C_Encoder)
+cencoder config lits comp lowerBound upperBound firstFreeLit = do
     ptr <- mallocArray (length lits) :: IO (Ptr WeightedLit)
     pokeArray (castPtr ptr) lits
     let size   = coerceEnum $ length lits
     let ccomp  = coerceEnum comp
-    let clower = coerceNum lowerBound
-    let cupper = coerceNum upperBound
-    let cfirstFree = coerceNum firstFreeLit
+    let clower = coerceEnum lowerBound
+    let cupper = coerceEnum upperBound
+    let cfirstFree = coerceEnum firstFreeLit
     rawEncoder <- toEncoder config ptr size ccomp clower cupper cfirstFree
     newForeignPtr free_C_Encoder rawEncoder
 
 
-toEncoder :: CardinalityMethod a => Config a -> Ptr WeightedLit -> CSize -> CInt -> CLong -> CLong -> CInt -> IO (Ptr C_Encoder)
+toEncoder :: Config -> Ptr WeightedLit -> CSize -> CInt -> CLong -> CLong -> CInt -> IO (Ptr C_Encoder)
 toEncoder = new_C_Encoder <$> (coerceEnum <$> pb_encoder)
                           <*> (coerceEnum <$> amk_encoder)
                           <*> (coerceEnum <$> amo_encoder)
                           <*> (coerceEnum <$> bimander_m_is)
-                          <*> bimander_m
-                          <*> k_product_minimum_lit_count_for_splitting
-                          <*> k_product_k
-                          <*> commander_encoding_k
-                          <*> max_clauses_per_constant
-                          <*> use_formula_cache
-                          <*> print_used_encodings
-                          <*> check_for_dup_literals
-                          <*> use_gac_binary_merge
-                          <*> binary_merge_no_support_for_single_bits
-                          <*> use_recursive_bdd_test
-                          <*> use_real_robdds
-                          <*> use_watch_dog_encoding_in_binary_merger
-                          <*> just_approximate
-                          <*> approximate_max_value
+                          <*> (coerceEnum <$> bimander_m)
+                          <*> (coerceEnum <$> k_product_minimum_lit_count_for_splitting)
+                          <*> (coerceEnum <$> k_product_k)
+                          <*> (coerceEnum <$> commander_encoding_k)
+                          <*> (coerceEnum <$> max_clauses_per_constant)
+                          <*> (coerceEnum <$> use_formula_cache)
+                          <*> (coerceEnum <$> print_used_encodings)
+                          <*> (coerceEnum <$> checkForDuplicateLiterals)
+                          <*> (coerceEnum <$> use_gac_binary_merge)
+                          <*> (coerceEnum <$> binary_merge_no_support_for_single_bits)
+                          <*> (coerceEnum <$> use_recursive_bdd_test)
+                          <*> (coerceEnum <$> use_real_robdds)
+                          <*> (coerceEnum <$> use_watch_dog_encoding_in_binary_merger)
+                          <*> (coerceEnum <$> justApproximate)
+                          <*> (coerceEnum <$> approximateMaxValue)
 
 
-encodeNewGeq :: ForeignPtr C_Encoder -> Int64 -> IO ()
-encodeNewGeq encoderPtr bound = withForeignPtr encoderPtr doGeq
+cencodeNewGeq :: ForeignPtr C_Encoder -> Int64 -> IO ()
+cencodeNewGeq encoderPtr bound = withForeignPtr encoderPtr doGeq
     where
-        doGeq ptr = c_encodeNewGeq ptr $ coerceNum bound
-encodeNewLeq :: ForeignPtr C_Encoder -> Int64 -> IO ()
-encodeNewLeq encoderPtr bound = withForeignPtr encoderPtr doLeq
-    where
-        doLeq ptr = c_encodeNewLeq ptr $ coerceNum bound
+        doGeq ptr = c_encodeNewGeq ptr $ coerceEnum bound
 
-getClauses :: ForeignPtr C_Encoder -> IO [[Int]]
-getClauses encoder = do
-    clausesPtr <- withForeignPtr encoder c_getClauses
-    rawClauses <- peek clausesPtr
+cencodeNewLeq :: ForeignPtr C_Encoder -> Int64 -> IO ()
+cencodeNewLeq encoderPtr bound = withForeignPtr encoderPtr doLeq
+    where
+        doLeq ptr = c_encodeNewLeq ptr $ coerceEnum bound
+
+cgetClauses :: ForeignPtr C_Encoder -> IO [[Int]]
+cgetClauses encoder = do
+    clausesPtr <- newForeignPtr free_C_Clauses =<< withForeignPtr encoder c_getClauses
+    rawClauses <- withForeignPtr clausesPtr peek
     return $ map (map fromEnum . toList) $ toList rawClauses
