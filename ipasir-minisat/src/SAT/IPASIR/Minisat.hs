@@ -17,7 +17,7 @@ import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
 
 --import SAT.IPASIR.Solver(Solver(..), IncrementalSolver(..), incrementalSolution)
 import SAT.IPASIR.IpasirApi 
-import SAT.IPASIR.ComplexityProblemInstances (LBool(..), SAT(..))
+import SAT.IPASIR.SAT (LBool(..), SAT(..))
 
 -- ----------------------------------------------------------------------
 -- * Some types

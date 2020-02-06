@@ -111,9 +111,9 @@ static inline void  clause_setactivity(clause* c, float a) { *((float*)&c->lits[
 //=================================================================================================
 // Encode literals in clause pointers:
 
-clause* clause_from_lit (lit l)     { return (clause*)((unsigned long)l + (unsigned long)l + 1);  }
-bool    clause_is_lit   (clause* c) { return ((unsigned long)c & 1);                              }
-lit     clause_read_lit (clause* c) { return (lit)((unsigned long)c >> 1);                        }
+clause* clause_from_lit (lit l)     { return (clause*)((uintptr_t) l + (uintptr_t) l + 1);  }
+bool    clause_is_lit   (clause* c) { return ((uintptr_t)c & 1);                              }
+lit     clause_read_lit (clause* c) { return (lit)((uintptr_t)c >> 1);                        }
 
 //=================================================================================================
 // Simple helpers:
