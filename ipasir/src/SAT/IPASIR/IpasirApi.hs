@@ -195,7 +195,7 @@ instance (Ipasir i) => Solver (IpasirSolver i) where
 instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     type MonadIS (IpasirSolver i) = IO
     newIterativeSolver = IpasirSolver <$> ipasirInit
-    addEncoding sat = liftSolverMonad $ \(IpasirSolver ip) -> forM_ sat $ ipasirAddClause ip
+    addEncoding (SAT.SAT e) = liftSolverMonad $ \(IpasirSolver ip) -> forM_ e $ ipasirAddClause ip
     solve = liftSolverMonad $ \(IpasirSolver ip) -> do
             b <- ipasirSolve ip
             case b of

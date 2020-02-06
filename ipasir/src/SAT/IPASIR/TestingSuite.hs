@@ -26,39 +26,36 @@ import SAT.IPASIR.ComplexityProblem
     , LBool(..)
     )
 
-createAssumingTest  :: forall s cp e a r m t.
+createAssumingTest  :: forall s cp a r m t.
                ( AssumingSolver s
                , Show r
                , cp ~ CPS s
-               , e ~ Encoding cp
                , a ~ Assumption cp
                , r ~ Result cp
                , m ~ MonadIS s
                ) 
-            => Proxy s -> ([e] -> [a] -> r -> Bool) -> ProgramS t e a  -> Bool
+            => Proxy s -> ([cp] -> [a] -> r -> Bool) -> ProgramS t cp a  -> Bool
 createAssumingTest s validate (ProgramS (Program coms))
     = unwrapSolverMonad s $ looper assume validate [] [] coms
 
-createIncrementalTest :: forall s cp e a r m t.
+createIncrementalTest :: forall s cp a r m t.
                ( IncrementalSolver s
                , Show r
                , cp ~ CPS s
-               , e ~ Encoding cp
                , r ~ Result cp
                , m ~ MonadIS s
                ) 
-            => Proxy s -> ([e] -> [a] -> r -> Bool) -> ProgramS t e a  -> Bool
+            => Proxy s -> ([cp] -> [a] -> r -> Bool) -> ProgramS t cp a  -> Bool
 createIncrementalTest s validate (ProgramS (Program coms))
     = unwrapSolverMonad s $ looper assume' validate [] [] coms
   where
     assume' _ = error "this solver can't assume."
 
-looper :: forall s cp e a r. 
+looper :: forall s cp a r. 
     ( IncrementalSolver s
     , cp ~ CPS s
-    , e ~ Encoding cp
     , r ~ Result cp
-    ) => (a -> SolverMonad s ()) -> ([e] -> [a] -> r -> Bool) -> [e] -> [a] -> [Command e a] -> SolverMonad s Bool
+    ) => (a -> SolverMonad s ()) -> ([cp] -> [a] -> r -> Bool) -> [cp] -> [a] -> [Command cp a] -> SolverMonad s Bool
 looper assume' validate encs assp []            = pure True 
 looper assume' validate encs assp (SolveNow:xs) = do
     res <- solve

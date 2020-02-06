@@ -26,12 +26,11 @@ enumToLBool i = case compare i 0 of
     _  -> LFalse
 
 class ComplexityProblem cp where
-    type Encoding cp
     type Solution cp
 
 class (ComplexityProblem cp) => AssumingProblem cp where
-    type Conflict cp
     type Assumption cp
+    type Conflict cp
 
 -- | Every 'Solver' returns either a 'Solution' (also called model or proof)
 --   for the complexity problem or a 'Conflict' if no solution exists.
@@ -53,10 +52,10 @@ instance Bifunctor (👉) where
 --   a certain solution.
 class (ComplexityProblem cp) => Solutiontransform cp where
     -- | Returns an encoding which will have a certain (unique) solution.
-    solutionToEncoding    :: Proxy cp -> Solution cp -> Encoding cp
+    solutionToEncoding    :: Solution cp -> cp
     -- | Returns an encoding for which every solution except the given 
     --   one is a valid.
-    negSolutionToEncoding :: Proxy cp -> Solution cp -> Encoding cp
+    negSolutionToEncoding :: Solution cp -> cp
 
 -- | A reduction parses one 'ComplexityProblem' into another.
 class (ComplexityProblem (CPFrom r), ComplexityProblem (CPTo r)) => Reduction r where
@@ -70,7 +69,7 @@ class (ComplexityProblem (CPFrom r), ComplexityProblem (CPTo r)) => Reduction r 
     -- | Parses an 'Encoding'. Notice, that the returned new reduction needs 
     --   to remember some renaming details like variablenames to parse a 
     --   'Solution' (or 'Conflict' or 'Assumption') back.
-    parseEncoding :: r -> Encoding (CPFrom r) -> (Encoding (CPTo r), r)
+    parseEncoding :: r -> CPFrom r -> (CPTo r, r)
     -- | Parses a 'Solution' of a 'ComplexityProblem' back.
     parseSolution :: r -> Solution (CPTo r) -> Solution (CPFrom r)
 

@@ -20,14 +20,16 @@ class (ComplexityProblem (CPS s)) => Solver s where
     -- | Calculates a model using the given solver. If the solver is an
     --  'IncrementalSolver', you can use the standard implementation:
     -- > solution = incrementalSolution
-    solution    :: Proxy s -> Encoding (CPS s) -> Result (CPS s)
+    solution    :: Proxy s -> CPS s -> Result (CPS s)
     -- | Same as checking if the result of 'solution' is a 'Solution'.
-    satisfiable :: Proxy s -> Encoding (CPS s) -> Bool
+    satisfiable :: Proxy s -> CPS s -> Bool
     satisfiable s e = isJust $ solution s e
 
 type SolverMonad s a =  StateT s (MonadIS s) a
 
-interleaveSolverMonad :: IncrementalSolver s => Proxy s -> SolverMonad s a -> SolverMonad s a
+interleaveSolverMonad :: IncrementalSolver s => Proxy s 
+                                             -> SolverMonad s a
+                                             -> SolverMonad s a
 interleaveSolverMonad p sm = StateT $ interleaveMonad p . runStateT sm
 
 class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
@@ -36,7 +38,7 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     -- | Creates a new empty 'IncrementalSolver'
     newIterativeSolver :: MonadIS s s
     -- | Adds contraints to the solver.
-    addEncoding        :: Encoding (CPS s) -> SolverMonad s ()
+    addEncoding        :: CPS s -> SolverMonad s ()
     -- | Starts the solving process and gives back the result. See 'Result'.
     solve              :: SolverMonad s (Result (CPS s))
     -- | If the monad is "IO" you might want to implement this
@@ -57,11 +59,9 @@ class (IncrementalSolver s, AssumingProblem (CPS s)) => AssumingSolver s where
 -- | If you want to instantiate 'Solver' you can use this 
 --   function as a standard implementation for 'solution'.
 incrementalSolution :: forall s. IncrementalSolver s 
-                    => Proxy s -> Encoding (CPS s) -> Result (CPS s)
+                    => Proxy s -> CPS s -> Result (CPS s)
 incrementalSolution s encoding 
-    = unwrapSolverMonad s $ do
-        addEncoding encoding
-        solve
+    = unwrapSolverMonad s $ addEncoding encoding >> solve
 
 runNewSolver :: IncrementalSolver s => Proxy s -> SolverMonad s a -> MonadIS s a
 runNewSolver _ sm = evalStateT sm =<< newIterativeSolver
@@ -72,7 +72,7 @@ unwrapSolverMonad s sm = unwrapMonadForNonIterative s $ runNewSolver s sm
 -- | Like 'solution' but gives back every possible 'Solution'. For a lazy list,
 --   you need to implement 'intercalateMonad' correctly. 
 solveAll :: forall s. (IncrementalSolver s, Solutiontransform (CPS s))
-         => Proxy s -> Encoding (CPS s) -> [Solution (CPS s)]
+         => Proxy s -> CPS s -> [Solution (CPS s)]
 solveAll s encoding = unwrapSolverMonad s $ do
     addEncoding encoding
     looper
@@ -83,7 +83,7 @@ solveAll s encoding = unwrapSolverMonad s $ do
         case res of
             Nothing  -> pure []
             Just sol -> do
-                addEncoding $ negSolutionToEncoding (Proxy :: Proxy (CPS s)) sol
+                addEncoding $ negSolutionToEncoding sol
                 sols <- interleaveSolverMonad s looper 
                 pure $ sol : sols
 
@@ -112,7 +112,8 @@ instance (Reduction r, IncrementalSolver s, CPS s ~ CPTo r)
 instance (AReduction r, AssumingSolver s, CPS s ~ CPTo r) 
           => AssumingSolver (r 👉 s) where
     assume ass    = liftReduction $ \r -> mapM_ assume $ parseAssumption r ass
-    solveConflict = liftReduction $ \r -> bimap (parseConflict r) (parseSolution r) <$> solveConflict
+    solveConflict = liftReduction $ \r -> 
+                      bimap (parseConflict r) (parseSolution r) <$> solveConflict
 
 liftReduction :: IncrementalSolver s => (r -> SolverMonad s a) -> SolverMonad (r 👉 s) a
 liftReduction f = do
