@@ -2,10 +2,8 @@
 #define PBLIB_C_H
 
 #include <cstdint>
-//#include "PBConfig.h"
 #include "incpbconstraint.h"
 #include "weightedlit.h"
-//#include "clausedatabase.h"
 #include "auxvarmanager.h"
 #include "pb2cnf.h"
 
@@ -66,6 +64,11 @@ void c_encodeNewGeq(C_Encoder* constraint, int64_t newGeq);
 void c_encodeNewLeq(C_Encoder* constraint, int64_t newLeq);
 
 const C_Clauses* c_getClauses(C_Encoder* db);
+
+void c_clearDB(C_Encoder* e);
+
+void c_addConditional(C_Encoder* e, int32_t cond);
+void c_clearConditional(C_Encoder* e);
 
 #ifdef __cplusplus
 }

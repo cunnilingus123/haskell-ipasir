@@ -39,9 +39,6 @@ C_Encoder* new_C_Encoder(
 ) {
     PBConfig config = make_shared<PBConfigClass>();
 
-    printf("Boolean  Size: %lu\n", sizeof(bool));
-    printf("uint32_t Size: %lu\n", sizeof(int32_t));
-
     config->pb_encoder = pb_encoder;
     config->amk_encoder = amk_encoder;
     config->amo_encoder = amo_encoder;
@@ -99,10 +96,9 @@ void free_C_Encoder(C_Encoder* e) {
 };
 
 void free_C_Clauses(C_Clauses* cnf) {
-    for (int i = 0; i < cnf->size; i++){
+    for (int i = 0; i < cnf->size; i++) {
         C_Clause* clause = &(cnf->clauses[i]);
         delete clause->literals;
-        delete clause;
     } 
     delete cnf->clauses;
     delete cnf;
@@ -115,9 +111,19 @@ void c_encodeNewLeq(C_Encoder* e, int64_t newLeq) {
     e->constraint->encodeNewLeq(newLeq, *(e->clauseDb), *(e->auxManager));
 }
 
-// Probably memory leak inside this function. 
-const C_Clauses* c_getClauses(C_Encoder* e) {
+void c_addConditional(C_Encoder* e, int32_t cond) {
+    e->constraint->addConditional(cond);
+}
+
+void c_clearConditional(C_Encoder* e) {
+    e->constraint->clearConditionals();
+}
+
+void c_clearDB(C_Encoder* e) {
     e->clauseDb->clearDatabase();
+}
+
+const C_Clauses* c_getClauses(C_Encoder* e) {
     VectorClauseDatabase* formula = e->clauseDb;
     vector<vector<int32_t>> clauses_v = formula->getClauses();
     C_Clauses* clauses = (C_Clauses*)malloc(sizeof(C_Clauses));
@@ -125,13 +131,12 @@ const C_Clauses* c_getClauses(C_Encoder* e) {
     clauses->clauses = (C_Clause*)malloc(sizeof(C_Clause) * clauses_v.size());
     for (int i=0; i<clauses_v.size(); i++) {
         vector<int32_t> clause_v = clauses_v[i];
-        C_Clause* clause = (C_Clause*)malloc(sizeof(C_Clause));
-        clause->size = clause_v.size();
-        clause->literals = (int32_t*)malloc(sizeof(int32_t) * clause_v.size());
-        clauses->clauses[i] = *clause;
+        C_Clause& clause = clauses->clauses[i];
+        clause.size = clause_v.size();
+        clause.literals = (int32_t*)malloc(sizeof(int32_t) * clause_v.size());
         int j=0;
         for (int32_t lit : clause_v) {
-            clause->literals[j++] = lit;
+            clause.literals[j++] = lit;
         }
     }
     return clauses;
