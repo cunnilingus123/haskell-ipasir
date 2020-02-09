@@ -22,7 +22,7 @@ import Data.Reflection (Reifies(..))
 import SAT.PseudoBoolean.Config      (Config, coerceEnum)
 import SAT.PseudoBoolean.WeightedLit (WeightedLit, WLit(weightit))
 import SAT.PseudoBoolean.C
-    ( CEncoder
+  {-   ( CEncoder
     , Comp(..)
     , cencoder
     , c_encodeNewGeq
@@ -34,18 +34,21 @@ import SAT.PseudoBoolean.C
     , c_clearDB
     , CVector(toList)
     , peek
-    )
+    ) 
+  -}
+import Foreign.Storable (Storable(..))
 
 -- | A state-monad, which knows in the type system if it is possible to change the lower bound (incremental)
 --   or the upper bound. 
-newtype CardinalityMonad (lb :: Bool) (ub :: Bool) a = CardinalityMonad {st :: StateT (ForeignPtr CEncoder) IO a}
+newtype CardinalityMonad a = CardinalityMonad {st :: StateT (ForeignPtr CEncoder) IO a}
     deriving (Functor)
-
-instance Monad (CardinalityMonad lb ub) where
+instance Monad CardinalityMonad where
     m >>= f = CardinalityMonad $ st m >>= st . f
-instance Applicative (CardinalityMonad lb ub) where
+instance Applicative CardinalityMonad where
     (<*>) = ap
     pure  = CardinalityMonad . pure 
+
+newtype CardinalityConstraint (lb :: Bool) (ub :: Bool) = CardinalityConstraint (Ptr CConstraint)
 
 instance Reifies True  Bool where
     reflect _ = True
@@ -61,72 +64,74 @@ instance BoundsOK True False Int where
 instance BoundsOK False True Int where
     toBounds _ _ = (0,) -- The lower bound will be ignores in pblib_c.cpp
 
-toComp :: forall lb ub t a. BoundsOK lb ub t => CardinalityMonad lb ub a -> Comp
+toComp :: forall lb ub t. BoundsOK lb ub t => CardinalityConstraint lb ub -> Comp
 toComp _ = case (reflect (Proxy :: Proxy lb), reflect (Proxy :: Proxy ub)) of
     (True, True)  -> CBoth
     (True, False) -> CGeq
     (False, True) -> CLeq
     _             -> error "The Type CardinalityMonad False False a should not be possible."
 
-evalEncoder :: forall lb ub t a l. (BoundsOK lb ub t, WLit l)
-            => Config
-            -> [l]
-            -> t
+evalEncoder :: Config
             -> Int
-            -> CardinalityMonad lb ub a
+            -> CardinalityMonad a
             -> IO a
-evalEncoder config lits bounds firstFree body = fst <$> runEncoder config lits bounds firstFree body
+evalEncoder config firstFree body = fst <$> runEncoder config firstFree body
 
-runEncoder  :: forall lb ub t a l. (BoundsOK lb ub t, WLit l)
-            => Config
-            -> [l]
-            -> t
+runEncoder  :: Config
             -> Int
-            -> CardinalityMonad lb ub a
+            -> CardinalityMonad a
             -> IO (a, ForeignPtr CEncoder)
-runEncoder config lits bounds firstFree body = do
-    let comp = toComp body
-    let (lower, upper) = toBounds (Proxy :: Proxy lb) (Proxy :: Proxy ub) bounds
-    let lits' = map weightit lits
-    e <- cencoder config lits' comp lower upper firstFree
-    runStateT (st body) e
+runEncoder config firstFree body = runStateT (st body) =<< cencoder config firstFree
 
-withEncoder :: (Ptr CEncoder -> IO a) -> CardinalityMonad lb ub a
+withEncoder :: (Ptr CEncoder -> IO a) -> CardinalityMonad a
 withEncoder body = CardinalityMonad $ do
     encoder <- get
     lift $ withForeignPtr encoder body
 
+encodeConstraint :: forall lb ub t l. (BoundsOK lb ub t, WLit l)
+                 => [l]
+                 -> t
+                 -> CardinalityMonad (CardinalityConstraint lb ub)
+encodeConstraint lits border = do
+    let lits  = map weightit lits
+        (l,u) = toBounds (Proxy :: Proxy lb) (Proxy :: Proxy ub) border
+        comp  = toComp (undefined :: CardinalityConstraint lb ub)
+    withEncoder $ \enc -> CardinalityConstraint <$> cconstraint enc lits comp l u
+
 -- | Same as 'encodeNewLeq' but for the lower bound.
-encodeNewGeq :: Int -> CardinalityMonad True a ()
-encodeNewGeq bound = withEncoder (`c_encodeNewGeq` coerceEnum bound)
+encodeNewGeq :: CardinalityConstraint True a -> Int -> CardinalityMonad ()
+encodeNewGeq (CardinalityConstraint cc) bound 
+    = withEncoder $ \enc -> c_encodeNewGeq enc cc (coerceEnum bound)
 
 -- | Sets a new upper bound. The return value is a logic formula in
 --   conditional normal, which garantees that.
-encodeNewLeq :: Int -> CardinalityMonad a True ()
-encodeNewLeq bound = withEncoder (`c_encodeNewLeq` coerceEnum bound)
+encodeNewLeq :: CardinalityConstraint a True -> Int -> CardinalityMonad ()
+encodeNewLeq (CardinalityConstraint cc) bound 
+    = withEncoder $ \enc -> c_encodeNewLeq enc cc (coerceEnum bound)
 
--- | See also 'bothLimited', 'belowLimited' and 'aboveLimited'.
-getClauses :: CardinalityMonad a b [[Int]]
+getClauses :: CardinalityMonad [[Int]]
 getClauses = withEncoder $ \encoder -> do
     clausesPtr <- newForeignPtr free_C_Clauses =<< c_getClauses encoder
     rawClauses <- withForeignPtr clausesPtr peek
     return $ map (map fromEnum . toList) $ toList rawClauses
 
--- | Same as 'getClauses' but concrete type.
-bothLimited  :: CardinalityMonad True True  [[Int]]
--- | Same as 'getClauses' but concrete type.
-belowLimited :: CardinalityMonad True False [[Int]]
--- | Same as 'getClauses' but concrete type.
-aboveLimited :: CardinalityMonad False True [[Int]]
-bothLimited  = getClauses
-belowLimited = getClauses
-aboveLimited = getClauses
+-- | Same as 'encodeConstraint' but concrete typed.
+encodeBoth :: WLit l => [l] -> (Int,Int) -> CardinalityMonad (CardinalityConstraint True True)
+-- | Same as 'encodeConstraint' but concrete typed.
+encodeGeq  :: WLit l => [l] ->  Int      -> CardinalityMonad (CardinalityConstraint True False)
+-- | Same as 'encodeConstraint' but concrete typed.
+encodeLeq  :: WLit l => [l] ->  Int      -> CardinalityMonad (CardinalityConstraint False True)
+encodeBoth = encodeConstraint
+encodeGeq  = encodeConstraint
+encodeLeq  = encodeConstraint
 
-addConditional :: Int -> CardinalityMonad a b ()
-addConditional i = withEncoder (`c_addConditional` coerceEnum i)
+addConditional :: CardinalityConstraint a b -> Int -> CardinalityMonad ()
+addConditional (CardinalityConstraint cc) i
+    = withEncoder $ \enc -> c_addConditional enc cc (coerceEnum i)
 
-clearConditionals :: CardinalityMonad a b ()
-clearConditionals = withEncoder c_clearConditional 
+clearConditionals :: CardinalityConstraint a b -> CardinalityMonad ()
+clearConditionals (CardinalityConstraint cc)
+    = withEncoder $ \enc -> c_clearConditional enc cc 
 
-clearDB :: CardinalityMonad a b ()
+clearDB :: CardinalityMonad ()
 clearDB = withEncoder c_clearDB

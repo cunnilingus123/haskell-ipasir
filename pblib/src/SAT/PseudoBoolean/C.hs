@@ -1,8 +1,5 @@
-module SAT.PseudoBoolean.C
-    ( cencoder
- --   , cencodeNewGeq
- --   , cencodeNewLeq
- --   , cgetClauses
+module SAT.PseudoBoolean.C where
+   {-    ( cencoder
     , c_encodeNewGeq
     , c_encodeNewLeq
     , c_getClauses
@@ -14,7 +11,9 @@ module SAT.PseudoBoolean.C
     , Comp(..)
     , CEncoder
     , CVector(toList)
-    ) where
+  
+    )
+    -} 
 
 import Data.Int (Int64)
 
@@ -33,20 +32,22 @@ data Comp
     | CBoth
     deriving (Show, Eq, Enum, Ord)
 
-cencoder :: Config -> [WeightedLit] -> Comp -> Int -> Int -> Int -> IO (ForeignPtr CEncoder)
-cencoder config lits comp lowerBound upperBound firstFreeLit = do
+cencoder :: Config -> Int -> IO (ForeignPtr CEncoder)
+cencoder config firstFreeLit = do
+    rawEncoder <- toEncoder config $ coerceEnum firstFreeLit
+    newForeignPtr free_C_Encoder rawEncoder
+
+cconstraint :: Ptr CEncoder -> [WeightedLit] -> Comp -> Int -> Int -> IO (Ptr CConstraint)
+cconstraint encoder lits comp lowerBound upperBound = do
     ptr <- mallocArray (length lits) :: IO (Ptr WeightedLit)
     pokeArray (castPtr ptr) lits
     let size       = coerceEnum $ length lits
         ccomp      = coerceEnum comp
         clower     = coerceEnum lowerBound
         cupper     = coerceEnum upperBound
-        cfirstFree = coerceEnum firstFreeLit
-    rawEncoder <- toEncoder config ptr size ccomp clower cupper cfirstFree
-    newForeignPtr free_C_Encoder rawEncoder
+    new_c_Constraint encoder ptr size ccomp clower cupper
 
-
-toEncoder :: Config -> Ptr WeightedLit -> CSize -> CInt -> CLong -> CLong -> CInt -> IO (Ptr CEncoder)
+toEncoder :: Config -> CInt -> IO (Ptr CEncoder)
 toEncoder = new_C_Encoder <$> (coerceEnum <$> pb_encoder)
                           <*> (coerceEnum <$> amk_encoder)
                           <*> (coerceEnum <$> amo_encoder)
@@ -104,46 +105,61 @@ instance Storable a => Storable (CVector a) where
         pokeArray arrPtr elems
         poke (castPtr ptr) arrPtr
 
--- | An sbstract type for the encoder object.
+-- | An abstract type for the encoder object.
 data CEncoder = CEncoder
 
-foreign import ccall unsafe "pblib_c.h new_C_Encoder" new_C_Encoder ::
-    CInt -> -- pb_encoder
-    CInt -> -- amk_encoder
-    CInt -> -- amo_encoder
-    CInt -> -- bimander_m_is
-    CInt -> -- bimander_m
-    CInt -> -- k_product_minimum_lit_count_for_splitting
-    CInt -> -- k_product_k
-    CInt -> -- commander_encoding_k
-    CLong -> -- MAX_CLAUSES_PER_CONSTRAINT
-    CBool -> -- use_formula_cache
-    CBool -> -- print_used_encodings
-    CBool -> -- check_for_dup_literals
-    CBool -> -- use_gac_binary_merge
-    CBool -> -- binary_merge_no_support_for_single_bits
-    CBool -> -- use_recursive_bdd_test
-    CBool -> -- use_real_robdds
-    CBool -> -- use_watch_dog_encoding_in_binary_merger
-    CBool -> -- just_approximate
-    CLong -> -- approximate_max_value
-    Ptr WeightedLit -> -- literals
-    CSize -> -- numLiterals
-    CInt -> -- comp 
-    CLong -> -- lowerBound
-    CLong -> -- upperBound
-    CInt -> --first_free_variable
-    IO (Ptr CEncoder)
+-- | An abstract type for the Constraint object.
+data CConstraint = CConstrant
 
-foreign import ccall unsafe "pblib_c.h &free_C_Encoder" free_C_Encoder :: FinalizerPtr CEncoder
+foreign import ccall unsafe "pblib_c.h new_C_Encoder" new_C_Encoder
+    :: CInt  -- ^ pb_encoder
+    -> CInt  -- ^ amk_encoder
+    -> CInt  -- ^ amo_encoder
+    -> CInt  -- ^ bimander_m_is
+    -> CInt  -- ^ bimander_m
+    -> CInt  -- ^ k_product_minimum_lit_count_for_splitting
+    -> CInt  -- ^ k_product_k
+    -> CInt  -- ^ commander_encoding_k
+    -> CLong -- ^ MAX_CLAUSES_PER_CONSTRAINT
+    -> CBool -- ^ use_formula_cache
+    -> CBool -- ^ print_used_encodings
+    -> CBool -- ^ check_for_dup_literals
+    -> CBool -- ^ use_gac_binary_merge
+    -> CBool -- ^ binary_merge_no_support_for_single_bits
+    -> CBool -- ^ use_recursive_bdd_test
+    -> CBool -- ^ use_real_robdds
+    -> CBool -- ^ use_watch_dog_encoding_in_binary_merger
+    -> CBool -- ^ just_approximate
+    -> CLong -- ^ approximate_max_value
+    -> CInt  -- ^ first_free_variable
+    -> IO (Ptr CEncoder)
 
-foreign import ccall unsafe "pblib_c.h c_encodeNewGeq" c_encodeNewGeq :: Ptr CEncoder -> CLong -> IO ()
-foreign import ccall unsafe "pblib_c.h c_encodeNewLeq" c_encodeNewLeq :: Ptr CEncoder -> CLong -> IO ()
+foreign import ccall unsafe "pblib_c.h new_c_Constraint" new_c_Constraint
+    :: Ptr CEncoder    -- ^ Encoder which have to add the contraint
+    -> Ptr WeightedLit -- ^ Literals
+    -> CSize           -- ^ numLiterals 
+    -> CInt            -- ^ comparator
+    -> CLong           -- ^ lowerBound (will be ignored iff Comparator is CLeq)
+    -> CLong           -- ^ upperBound (will be ignored iff Comparator is CGeq)
+    -> IO (Ptr CConstraint)
 
-foreign import ccall unsafe "pblib_c.h c_clearDB" c_clearDB :: Ptr CEncoder -> IO ()
+foreign import ccall unsafe "pblib_c.h &free_C_Encoder" 
+    free_C_Encoder :: FinalizerPtr CEncoder
 
-foreign import ccall unsafe "pblib_c.h c_addConditional" c_addConditional :: Ptr CEncoder -> CInt -> IO ()
-foreign import ccall unsafe "pblib_c.h c_clearConditional" c_clearConditional :: Ptr CEncoder -> IO ()
+foreign import ccall unsafe "pblib_c.h c_encodeNewGeq" 
+    c_encodeNewGeq :: Ptr CEncoder -> Ptr CConstraint -> CLong -> IO ()
+foreign import ccall unsafe "pblib_c.h c_encodeNewLeq" 
+    c_encodeNewLeq :: Ptr CEncoder -> Ptr CConstraint -> CLong -> IO ()
 
-foreign import ccall unsafe "pblib_c.h c_getClauses" c_getClauses :: Ptr CEncoder -> IO (Ptr (CVector (CVector CInt)))
-foreign import ccall unsafe "pblib_c.h &free_C_Clauses" free_C_Clauses :: FinalizerPtr (CVector (CVector CInt))
+foreign import ccall unsafe "pblib_c.h c_clearDB" 
+    c_clearDB :: Ptr CEncoder -> IO ()
+
+foreign import ccall unsafe "pblib_c.h c_addConditional" 
+    c_addConditional  :: Ptr CEncoder -> Ptr CConstraint -> CInt -> IO ()
+foreign import ccall unsafe "pblib_c.h c_clearConditional" 
+    c_clearConditional :: Ptr CEncoder -> Ptr CConstraint -> IO ()
+
+foreign import ccall unsafe "pblib_c.h c_getClauses" 
+    c_getClauses :: Ptr CEncoder -> IO (Ptr (CVector (CVector CInt)))
+foreign import ccall unsafe "pblib_c.h &free_C_Clauses" 
+    free_C_Clauses :: FinalizerPtr (CVector (CVector CInt))

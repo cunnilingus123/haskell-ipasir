@@ -2,6 +2,7 @@
 #define PBLIB_C_H
 
 #include <cstdint>
+#include <vector>
 #include "incpbconstraint.h"
 #include "weightedlit.h"
 #include "auxvarmanager.h"
@@ -12,7 +13,7 @@ extern "C" {
 #endif
 
 struct C_Encoder {
-    IncPBConstraint* constraint;
+    std::vector<IncPBConstraint*>* constraint;
     VectorClauseDatabase* clauseDb;
     AuxVarManager* auxManager;
     PB2CNF* encoder;
@@ -50,25 +51,25 @@ C_Encoder* new_C_Encoder(
     bool use_watch_dog_encoding_in_binary_merger,
     bool just_approximate,
     int64_t approximate_max_value,
-    PBLib::WeightedLit** literals,
-    size_t numLiterals,
-    PBLib::Comparator comp,
-    int64_t lowerBound,
-    int64_t upperBound,
-    int32_t first_free_variable);
+    int32_t first_free_variable
+    );
 
 void free_C_Encoder(C_Encoder* ptr);
 void free_C_Clauses(C_Clauses* cnf);
 
-void c_encodeNewGeq(C_Encoder* constraint, int64_t newGeq);
-void c_encodeNewLeq(C_Encoder* constraint, int64_t newLeq);
+const IncPBConstraint* new_c_Constraint( C_Encoder* e, PBLib::WeightedLit** literals, 
+                                         size_t numLiterals, PBLib::Comparator comp, 
+                                         int64_t lowerBound, int64_t upperBound);
+
+void c_encodeNewGeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newGeq);
+void c_encodeNewLeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newLeq);
 
 const C_Clauses* c_getClauses(C_Encoder* db);
 
 void c_clearDB(C_Encoder* e);
 
-void c_addConditional(C_Encoder* e, int32_t cond);
-void c_clearConditional(C_Encoder* e);
+void c_addConditional(IncPBConstraint* e, int32_t cond);
+void c_clearConditional(IncPBConstraint* e);
 
 #ifdef __cplusplus
 }

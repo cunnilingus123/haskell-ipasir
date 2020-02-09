@@ -20,9 +20,9 @@ module SAT.PseudoBoolean
     , encodeNewGeq
     , encodeNewLeq
     , getClauses
-    , aboveLimited
-    , belowLimited
-    , bothLimited 
+    , encodeBoth
+    , encodeLeq
+    , encodeGeq 
     , addConditional
     , clearConditionals
     , clearDB
@@ -48,19 +48,19 @@ encodeAMO config lits = encodeAMK config lits 1
 --   __l__ is of type 'WeightedLit', the function works in respect the the weight. 
 encodeAMK :: WLit l => Config -> [l] -> Int -- ^ k (upper bound)
                                      -> Int -- ^ first auxiliary valiable
-                                     -> [[Int]]
-encodeAMK = compareK aboveLimited
+                                     -> [[Int]] -- ^ CNF
+encodeAMK = compareK encodeLeq
 
 -- | Same as 'encodeAMK' but it encodes __at least k__. 
 encodeALK :: WLit l => Config -> [l] -> Int -- ^ k (lower bound)
                                      -> Int -- ^ first auxiliary valiable
-                                     -> [[Int]]
-encodeALK = compareK belowLimited
+                                     -> [[Int]] -- ^ CNF
+encodeALK = compareK encodeGeq
 
 -- | Like 'encodeAMK' and 'encodeALK' together. The first int in the tuple
 --   stands for the lower bound and the second one stands for the upper bound.
 encodeBetween :: WLit l => Config -> [l] -> (Int,Int) -> Int -> [[Int]]
-encodeBetween = compareK bothLimited
+encodeBetween = compareK encodeBoth
 
 -- | Gives the first possible auxiliary variable. That means the result is
 --   the smallest possitive int, which is higher than every absolute of the
@@ -68,5 +68,12 @@ encodeBetween = compareK bothLimited
 firstAuxiliaryVar :: WLit l => [l] -> Int
 firstAuxiliaryVar = succ . maximum . map (abs . fromEnum . literal . weightit)
 
-compareK :: (BoundsOK lb ub t, WLit l) => CardinalityMonad lb ub a -> Config -> [l] -> t -> Int -> a
-compareK m config lits max firstFree = unsafePerformIO $ evalEncoder config lits max firstFree m
+compareK :: (WLit l, BoundsOK a b t)
+         => ([l] -> t -> CardinalityMonad (CardinalityConstraint a b))
+         -> Config
+         -> [l]
+         -> t
+         -> Int
+         -> [[Int]]
+compareK m config lits k firstFree 
+    = unsafePerformIO $ evalEncoder config firstFree $ m lits k >> getClauses

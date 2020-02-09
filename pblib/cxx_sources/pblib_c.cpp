@@ -30,11 +30,6 @@ C_Encoder* new_C_Encoder(
     bool use_watch_dog_encoding_in_binary_merger,
     bool just_approximate,
     int64_t approximate_max_value,
-    PBLib::WeightedLit** literals,
-    size_t numLiterals,
-    PBLib::Comparator comp,
-    int64_t lowerBound,
-    int64_t upperBound,
     int32_t first_free_variable
 ) {
     PBConfig config = make_shared<PBConfigClass>();
@@ -63,6 +58,22 @@ C_Encoder* new_C_Encoder(
 
     PB2CNF* pb2cnf = new PB2CNF(config);
     AuxVarManager* auxvars = new AuxVarManager(first_free_variable);
+    
+    C_Encoder* e  = (C_Encoder*)malloc(sizeof(C_Encoder));
+    e->constraint = new vector<IncPBConstraint*>;
+    e->clauseDb   = formula;
+    e->auxManager = auxvars;
+    e->encoder    = pb2cnf;
+    return e;
+};
+
+const IncPBConstraint* new_c_Constraint( C_Encoder* e, PBLib::WeightedLit** literals, 
+                                         size_t numLiterals, PBLib::Comparator comp, 
+                                         int64_t lowerBound, int64_t upperBound) {
+    PB2CNF* pb2cnf = e->encoder;
+    VectorClauseDatabase* formula = e->clauseDb;
+    AuxVarManager* auxManager = e->auxManager;
+
     vector<PBLib::WeightedLit>* literals_v = new vector<PBLib::WeightedLit>();
     for(int i = 0; i < numLiterals; i++) {
         PBLib::WeightedLit* lit = literals[i];
@@ -77,15 +88,10 @@ C_Encoder* new_C_Encoder(
     else
         constraint = new IncPBConstraint(*literals_v, comp, lowerBound);
 
-    pb2cnf->encodeIncInital(*constraint, *formula, *auxvars);
-
-    C_Encoder* e = (C_Encoder*)malloc(sizeof(C_Encoder));
-    e->constraint = constraint;
-    e->clauseDb = formula;
-    e->auxManager = auxvars;
-    e->encoder = pb2cnf;
-    return e;
-};
+    pb2cnf->encodeIncInital(*constraint, *formula, *auxManager);
+    e->constraint->push_back(constraint);
+    return constraint;
+}
 
 void free_C_Encoder(C_Encoder* e) {
     delete e->constraint;
@@ -104,19 +110,19 @@ void free_C_Clauses(C_Clauses* cnf) {
     delete cnf;
 };
 
-void c_encodeNewGeq(C_Encoder* e, int64_t newGeq) {
-    e->constraint->encodeNewGeq(newGeq, *(e->clauseDb), *(e->auxManager));
+void c_encodeNewGeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newGeq) {
+    constraint->encodeNewGeq(newGeq, *(e->clauseDb), *(e->auxManager));
 }
-void c_encodeNewLeq(C_Encoder* e, int64_t newLeq) {
-    e->constraint->encodeNewLeq(newLeq, *(e->clauseDb), *(e->auxManager));
-}
-
-void c_addConditional(C_Encoder* e, int32_t cond) {
-    e->constraint->addConditional(cond);
+void c_encodeNewLeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newLeq) {
+    constraint->encodeNewLeq(newLeq, *(e->clauseDb), *(e->auxManager));
 }
 
-void c_clearConditional(C_Encoder* e) {
-    e->constraint->clearConditionals();
+void c_addConditional(IncPBConstraint* constraint, int32_t cond) {
+    constraint->addConditional(cond);
+}
+
+void c_clearConditional(IncPBConstraint* constraint) {
+    constraint->clearConditionals();
 }
 
 void c_clearDB(C_Encoder* e) {
