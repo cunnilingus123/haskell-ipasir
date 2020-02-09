@@ -1,5 +1,5 @@
 #include <iterator>
-#include <vector>
+#include <string.h>
 #include "pblib_c.h"
 
 
@@ -33,7 +33,6 @@ C_Encoder* new_C_Encoder(
     int32_t first_free_variable
 ) {
     PBConfig config = make_shared<PBConfigClass>();
-
     config->pb_encoder = pb_encoder;
     config->amk_encoder = amk_encoder;
     config->amo_encoder = amo_encoder;
@@ -65,11 +64,12 @@ C_Encoder* new_C_Encoder(
     e->auxManager = auxvars;
     e->encoder    = pb2cnf;
     return e;
-};
+}
 
 const IncPBConstraint* new_c_Constraint( C_Encoder* e, PBLib::WeightedLit** literals, 
                                          size_t numLiterals, PBLib::Comparator comp, 
                                          int64_t lowerBound, int64_t upperBound) {
+
     PB2CNF* pb2cnf = e->encoder;
     VectorClauseDatabase* formula = e->clauseDb;
     AuxVarManager* auxManager = e->auxManager;
@@ -99,16 +99,12 @@ void free_C_Encoder(C_Encoder* e) {
     delete e->auxManager;
     delete e->encoder;
     delete e;
-};
+}
 
-void free_C_Clauses(C_Clauses* cnf) {
-    for (int i = 0; i < cnf->size; i++) {
-        C_Clause* clause = &(cnf->clauses[i]);
-        delete clause->literals;
-    } 
-    delete cnf->clauses;
+void free_C_Clauses(C_Cnf* cnf) {
+    delete cnf->dimacs;
     delete cnf;
-};
+}
 
 void c_encodeNewGeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newGeq) {
     constraint->encodeNewGeq(newGeq, *(e->clauseDb), *(e->auxManager));
@@ -129,21 +125,25 @@ void c_clearDB(C_Encoder* e) {
     e->clauseDb->clearDatabase();
 }
 
-const C_Clauses* c_getClauses(C_Encoder* e) {
+const C_Cnf* c_getClauses(C_Encoder* e) {
     VectorClauseDatabase* formula = e->clauseDb;
     vector<vector<int32_t>> clauses_v = formula->getClauses();
-    C_Clauses* clauses = (C_Clauses*)malloc(sizeof(C_Clauses));
-    clauses->size = clauses_v.size();
-    clauses->clauses = (C_Clause*)malloc(sizeof(C_Clause) * clauses_v.size());
-    for (int i=0; i<clauses_v.size(); i++) {
-        vector<int32_t> clause_v = clauses_v[i];
-        C_Clause& clause = clauses->clauses[i];
-        clause.size = clause_v.size();
-        clause.literals = (int32_t*)malloc(sizeof(int32_t) * clause_v.size());
-        int j=0;
-        for (int32_t lit : clause_v) {
-            clause.literals[j++] = lit;
-        }
+    // create
+    C_Cnf* clauses = (C_Cnf*) malloc(sizeof(C_Cnf));
+    clauses->size = clauses_v.size(); 
+    for( vector<int32_t> c : clauses_v ) {
+        clauses->size += c.size();
     }
+    clauses->dimacs = (int32_t*) malloc(sizeof(int32_t) * clauses->size);
+
+    // fill literals
+    int32_t* pos = clauses->dimacs;
+    for( vector<int32_t> c : clauses_v ){
+        memcpy(pos, c.data(), sizeof(int32_t) * c.size() );
+        pos[c.size()] = 0;
+        pos += c.size() + 1;
+    }
+    clauses->size--; // Dont use the last 0.
+
     return clauses;
 }

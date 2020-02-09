@@ -19,6 +19,7 @@ dependencies:
 - base >= 4.7 && < 5
 - transformers
 - reflection
+- split
 
 extra-libraries: stdc++
 cxx-options: -fPIC

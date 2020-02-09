@@ -19,14 +19,16 @@ struct C_Encoder {
     PB2CNF* encoder;
 };
 
+/*
 struct C_Clause {
     size_t size;
     int32_t* literals;
 };
+*/
 
-struct C_Clauses {
+struct C_Cnf {
     size_t size;
-    C_Clause* clauses;
+    int32_t* dimacs;
 };
 
 PBLib::WeightedLit* new_WeightedLit(int32_t lit, int64_t weight);
@@ -55,7 +57,7 @@ C_Encoder* new_C_Encoder(
     );
 
 void free_C_Encoder(C_Encoder* ptr);
-void free_C_Clauses(C_Clauses* cnf);
+void free_C_Clauses(C_Cnf* cnf);
 
 const IncPBConstraint* new_c_Constraint( C_Encoder* e, PBLib::WeightedLit** literals, 
                                          size_t numLiterals, PBLib::Comparator comp, 
@@ -64,7 +66,7 @@ const IncPBConstraint* new_c_Constraint( C_Encoder* e, PBLib::WeightedLit** lite
 void c_encodeNewGeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newGeq);
 void c_encodeNewLeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newLeq);
 
-const C_Clauses* c_getClauses(C_Encoder* db);
+const C_Cnf* c_getClauses(C_Encoder* db);
 
 void c_clearDB(C_Encoder* e);
 

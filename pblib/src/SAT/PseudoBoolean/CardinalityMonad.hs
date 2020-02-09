@@ -11,31 +11,32 @@ module SAT.PseudoBoolean.CardinalityMonad where
 
 import Control.Monad (ap)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State.Lazy (StateT, runStateT, get)
+import Control.Monad.Trans.State.Lazy (StateT, evalStateT, get)
 
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr, newForeignPtr)
 import Foreign.Ptr (Ptr)
 
 import Data.Proxy      (Proxy(..))
 import Data.Reflection (Reifies(..))
+import Data.List.Split (splitOn)
 
 import SAT.PseudoBoolean.Config      (Config, coerceEnum)
 import SAT.PseudoBoolean.WeightedLit (WeightedLit, WLit(weightit))
 import SAT.PseudoBoolean.C
-  {-   ( CEncoder
+    ( CEncoder
+    , CConstraint
     , Comp(..)
     , cencoder
+    , cconstraint
     , c_encodeNewGeq
     , c_encodeNewLeq
-    , c_getClauses
+    , cgetClauses
     , free_C_Clauses
     , c_addConditional
     , c_clearConditional
     , c_clearDB
-    , CVector(toList)
-    , peek
     ) 
-  -}
+
 import Foreign.Storable (Storable(..))
 
 -- | A state-monad, which knows in the type system if it is possible to change the lower bound (incremental)
@@ -69,19 +70,10 @@ toComp _ = case (reflect (Proxy :: Proxy lb), reflect (Proxy :: Proxy ub)) of
     (True, True)  -> CBoth
     (True, False) -> CGeq
     (False, True) -> CLeq
-    _             -> error "The Type CardinalityMonad False False a should not be possible."
+    _             -> error "The Type CardinalityConstraint False False should not be possible."
 
-evalEncoder :: Config
-            -> Int
-            -> CardinalityMonad a
-            -> IO a
-evalEncoder config firstFree body = fst <$> runEncoder config firstFree body
-
-runEncoder  :: Config
-            -> Int
-            -> CardinalityMonad a
-            -> IO (a, ForeignPtr CEncoder)
-runEncoder config firstFree body = runStateT (st body) =<< cencoder config firstFree
+evalEncoder :: Config -> Int -> CardinalityMonad a -> IO a
+evalEncoder config firstFree body = evalStateT (st body) =<< cencoder config firstFree
 
 withEncoder :: (Ptr CEncoder -> IO a) -> CardinalityMonad a
 withEncoder body = CardinalityMonad $ do
@@ -93,10 +85,10 @@ encodeConstraint :: forall lb ub t l. (BoundsOK lb ub t, WLit l)
                  -> t
                  -> CardinalityMonad (CardinalityConstraint lb ub)
 encodeConstraint lits border = do
-    let lits  = map weightit lits
+    let lits' = map weightit lits
         (l,u) = toBounds (Proxy :: Proxy lb) (Proxy :: Proxy ub) border
         comp  = toComp (undefined :: CardinalityConstraint lb ub)
-    withEncoder $ \enc -> CardinalityConstraint <$> cconstraint enc lits comp l u
+    withEncoder $ \enc -> CardinalityConstraint <$> cconstraint enc lits' comp l u
 
 -- | Same as 'encodeNewLeq' but for the lower bound.
 encodeNewGeq :: CardinalityConstraint True a -> Int -> CardinalityMonad ()
@@ -110,10 +102,10 @@ encodeNewLeq (CardinalityConstraint cc) bound
     = withEncoder $ \enc -> c_encodeNewLeq enc cc (coerceEnum bound)
 
 getClauses :: CardinalityMonad [[Int]]
-getClauses = withEncoder $ \encoder -> do
-    clausesPtr <- newForeignPtr free_C_Clauses =<< c_getClauses encoder
-    rawClauses <- withForeignPtr clausesPtr peek
-    return $ map (map fromEnum . toList) $ toList rawClauses
+getClauses = do
+    res <- withEncoder cgetClauses
+    clearDB -- Remove this line if you want this result being a subset of the next one.
+    return res
 
 -- | Same as 'encodeConstraint' but concrete typed.
 encodeBoth :: WLit l => [l] -> (Int,Int) -> CardinalityMonad (CardinalityConstraint True True)
