@@ -94,6 +94,9 @@ const IncPBConstraint* new_c_Constraint( C_Encoder* e, PBLib::WeightedLit** lite
 }
 
 void free_C_Encoder(C_Encoder* e) {
+    for(IncPBConstraint* c : *e->constraint) {
+        delete c;
+    }
     delete e->constraint;
     delete e->clauseDb;
     delete e->auxManager;
@@ -114,7 +117,9 @@ void c_encodeNewLeq(C_Encoder* e, IncPBConstraint* constraint, int64_t newLeq) {
 }
 
 void c_addConditional(IncPBConstraint* constraint, int32_t cond) {
+    printf("try to add condition %i to the constraint %p\n", cond, constraint);
     constraint->addConditional(cond);
+    printf("success adding condition %i to the constraint %p\n", cond, constraint);
 }
 
 void c_clearConditional(IncPBConstraint* constraint) {

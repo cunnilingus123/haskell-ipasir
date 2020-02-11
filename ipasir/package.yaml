@@ -26,6 +26,7 @@ dependencies:
 - QuickCheck
 - reflection
 - transformers
+- comonad
 
 library:
   source-dirs: src

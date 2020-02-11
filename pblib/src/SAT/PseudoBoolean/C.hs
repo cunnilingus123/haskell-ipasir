@@ -41,17 +41,14 @@ cencoder config firstFreeLit = do
 
 cconstraint :: Ptr CEncoder -> [WeightedLit] -> Comp -> Int -> Int -> IO (Ptr CConstraint)
 cconstraint encoder lits comp lowerBound upperBound = do
-    traceM "cconstraint begin"
     ptr <- mallocArray (length lits) :: IO (Ptr WeightedLit)
     pokeArray (castPtr ptr) lits
     let size       = coerceEnum $ length lits
         ccomp      = coerceEnum comp
         clower     = coerceEnum lowerBound
         cupper     = coerceEnum upperBound
-    traceM "cconstraint almost end"
-    res <- new_c_Constraint encoder ptr size ccomp clower cupper
-    traceM "cconstraint end"
-    return res
+    new_c_Constraint encoder ptr size ccomp clower cupper
+    
 
 toEncoder :: Config -> CInt -> IO (Ptr CEncoder)
 toEncoder = new_C_Encoder <$> (coerceEnum <$> pb_encoder)
@@ -78,7 +75,7 @@ cgetClauses :: Ptr CEncoder -> IO [[Int]]
 cgetClauses encoder = do
     clausesPtr <- newForeignPtr free_C_Clauses =<< c_getClauses encoder
     rawClauses <- withForeignPtr clausesPtr peek
-    return $ (map . map) fromEnum $ splitOn [0] $ toList rawClauses
+    return $ splitOn [0] $ map fromEnum $ toList rawClauses
 
 newtype CVector a = CVector { toList :: [a] }
 instance Show a => Show (CVector a) where
@@ -148,9 +145,9 @@ foreign import ccall unsafe "pblib_c.h c_clearDB"
     c_clearDB :: Ptr CEncoder -> IO ()
 
 foreign import ccall unsafe "pblib_c.h c_addConditional" 
-    c_addConditional  :: Ptr CEncoder -> Ptr CConstraint -> CInt -> IO ()
+    c_addConditional   :: Ptr CConstraint -> CInt -> IO ()
 foreign import ccall unsafe "pblib_c.h c_clearConditional" 
-    c_clearConditional :: Ptr CEncoder -> Ptr CConstraint -> IO ()
+    c_clearConditional :: Ptr CConstraint -> IO ()
 
 foreign import ccall unsafe "pblib_c.h c_getClauses" 
     c_getClauses :: Ptr CEncoder -> IO (Ptr (CVector CInt))

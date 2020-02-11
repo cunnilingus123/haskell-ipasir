@@ -13,6 +13,7 @@ import Control.Monad (ap)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Lazy (StateT, evalStateT, get)
 
+import Foreign.Storable (Storable(..))
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr, newForeignPtr)
 import Foreign.Ptr (Ptr)
 
@@ -37,10 +38,10 @@ import SAT.PseudoBoolean.C
     , c_clearDB
     ) 
 
-import Foreign.Storable (Storable(..))
+import Debug.Trace
 
--- | A state-monad, which knows in the type system if it is possible to change the lower bound (incremental)
---   or the upper bound. 
+-- | A state-monad, which knows in the type system if it is possible to change 
+--   the lower bound (incremental) or the upper bound. 
 newtype CardinalityMonad a = CardinalityMonad {st :: StateT (ForeignPtr CEncoder) IO a}
     deriving (Functor)
 instance Monad CardinalityMonad where
@@ -117,13 +118,16 @@ encodeBoth = encodeConstraint
 encodeGeq  = encodeConstraint
 encodeLeq  = encodeConstraint
 
+-- | I implemented this function from the original pblib but I dont understand 
+--   what it is doing. Maybe I did something wrong.
 addConditional :: CardinalityConstraint a b -> Int -> CardinalityMonad ()
 addConditional (CardinalityConstraint cc) i
-    = withEncoder $ \enc -> c_addConditional enc cc (coerceEnum i)
+    = withEncoder $ \_ -> c_addConditional cc $ coerceEnum i
 
+-- | Removes the conditionals added by 'addConditional'.
 clearConditionals :: CardinalityConstraint a b -> CardinalityMonad ()
 clearConditionals (CardinalityConstraint cc)
-    = withEncoder $ \enc -> c_clearConditional enc cc 
+    = withEncoder $ \_ -> c_clearConditional cc 
 
 clearDB :: CardinalityMonad ()
 clearDB = withEncoder c_clearDB

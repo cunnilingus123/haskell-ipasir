@@ -1,6 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module SAT.IPASIR.SAT
     ( SAT (..)
@@ -14,9 +15,9 @@ import Data.Array (Array, assocs, bounds, ixmap)
 import Data.Ix (Ix(..))
 import Data.Bifunctor (Bifunctor(..))
 import Data.Set (fromList)
+import Data.Map (Map)
 import Data.Function (on)
 import Foreign.C.Types (CInt)
-
 
 import SAT.IPASIR.ComplexityProblem as Export
 
@@ -28,6 +29,22 @@ import SAT.IPASIR.ComplexityProblem as Export
 --   is a sublist of a clause in b and vice versa.
 newtype SAT e b = SAT {satInstance :: [[e]]}
     deriving (Show, Read)
+
+newtype SATLit v b = SATLit {satLitInstance :: [[Lit v]]}
+    deriving (Show, Read)
+
+data Lit v = Neg v | Pos v
+    deriving (Show, Read, Eq, Ord, Functor)
+
+instance Ord v => ComplexityProblem (SATLit v b) where
+    type Solution (SATLit v b) = Map v b
+
+instance Ord v => AssumingProblem (SATLit v b) where
+    type Conflict   (SATLit v b) = [v]
+    type Assumption (SATLit v b) = Lit v
+
+instance Bifunctor SATLit where
+    bimap f _ (SATLit cnf) = SATLit $ (map . map . fmap) f cnf
 
 instance Ord e => Eq (SAT e b) where
     SAT a == SAT b = on (==) (fromList . map fromList)  a b
