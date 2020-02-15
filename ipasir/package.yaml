@@ -27,6 +27,7 @@ dependencies:
 - reflection
 - transformers
 - comonad
+- ilist
 
 library:
   source-dirs: src

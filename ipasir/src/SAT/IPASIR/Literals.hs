@@ -10,6 +10,9 @@ module SAT.IPASIR.Literals
     , fromBool
     , neg
     , isPositive
+    , extract
+    , flatLit
+    , enumToLBool
     ) where
 
 import Data.String (IsString(..))
@@ -40,6 +43,15 @@ instance Enum LBool where
         | i == 0    = LUndef
         | i <  0    = LFalse
         | otherwise = LTrue
+
+enumToLBool :: (Ord a, Num a) => a -> LBool
+enumToLBool i = case compare i 0 of
+    GT -> LTrue
+    EQ -> LUndef
+    _  -> LFalse
+
+instance Read LBool where
+
 
 -- | A literal is a positive or negative atom.
 data Lit a
@@ -96,3 +108,7 @@ neg (Neg a) = Pos a
 isPositive :: Lit a -> Bool
 isPositive (Pos _) = True
 isPositive (Neg _) = False
+
+flatLit :: Num e => Lit e -> e
+flatLit (Pos i) = i
+flatLit (Neg i) = -i

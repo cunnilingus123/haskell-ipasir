@@ -8,9 +8,11 @@ import Data.Maybe
 -- |Represents one clause in a XCNF
 data Clause v      = Or (OrClause v) | XOr (XOrClause v)
     deriving (Show, Eq, Ord)
--- |Represents one clause in a CNF. That means all literals are concatenated by logical or \\( \\vee \\)
+-- |Represents one clause in a CNF. That means all literals are concatenated 
+--  by logical or \\( \\vee \\)
 type OrClause v    = [Lit v]
--- |Represents one xclause in a XCNF. That means all variables are concatenated by logical exclusive or \\( \\oplus \\)
+-- |Represents one xclause in a XCNF. That means all variables are 
+--  concatenated by logical exclusive or \\( \\oplus \\). 
 --  The sign can negate the whole clause.
 type XOrClause v   = Lit [v]
 -- |Represents a XCNF
@@ -23,7 +25,8 @@ getLits :: Clause v -> [Lit v]
 getLits ( Or a) = a
 getLits (XOr a) = map return $ extract a
 
-{- |Transforms a list of clauses into a 'NormalForm'. The boolean transforms the clauses of length one.
+{- |Transforms a list of clauses into a 'NormalForm'.
+    The boolean transforms the clauses of length one.
 
         * if the boolean is @True@,  then the clauses of length one will be an or-clause.
         * if the boolean is @False@, then the clauses of length one will be a xor-clause.
@@ -34,7 +37,7 @@ partitionClauses True  (Or x:xs) = first (x:) $ partitionClauses True xs
 partitionClauses False (XOr x:xs)= second (x:) $ partitionClauses False xs
 partitionClauses _ ( Or [x]:xs)   = second ((return <$> x) :) $ partitionClauses False xs  -- ( ors, (return <$> x) : xors)
 partitionClauses _ ( Or x:xs)     = first (x:) $ partitionClauses False xs
-partitionClauses _ (XOr x:xs)          
+partitionClauses _ (XOr x:xs)
     | isJust transformed = first (fromJust transformed:) $ partitionClauses True xs
     | otherwise          = second (x:) $ partitionClauses True xs
     where
@@ -50,15 +53,21 @@ partitionClauses _ (XOr x:xs)
 
     The cnf will be constructed by the rule:
 
-    The trivial case ís \\( \\bigoplus_{x\\in\\varnothing} x \\equiv False \\). And for all \\(n>0\\)$:
+    The trivial case ís \\( \\bigoplus_{x\\in\\varnothing} x \\equiv False \\). 
+    And for all \\(n>0\\):
 
 $$
-\\bigoplus_{i=1}^{n}x_{i}	\\equiv x_{n}\\oplus\\bigoplus_{i=1}^{n-1}x_{i}\\equiv\\left(\\lnot x_{n}\\vee\\bigoplus_{i=1}^{n-1}x_{i}\\right)\\wedge\\left(x_{n}\\vee\\lnot\\bigoplus_{i=1}^{n-1}x_{i}\\right)
+\\bigoplus_{i=1}^{n}x_{i}	\\equiv x_{n}\\oplus
+\\bigoplus_{i=1}^{n-1}x_{i}\\equiv\\left(\\lnot x_{n}\\vee
+\\bigoplus_{i=1}^{n-1}x_{i}\\right)\\wedge\\left(x_{n}\\vee
+\\lnot\\bigoplus_{i=1}^{n-1}x_{i}\\right)
 $$
 
 respectivly
 
-$$\\lnot\\bigoplus_{i=1}^{n}x_{i}\\equiv\\lnot x_{n}\\oplus\\bigoplus_{i=1}^{n-1}x_{i}\\equiv\\left(x_{n}\\vee\\bigoplus_{i=1}^{n-1}x_{i}\\right)\\wedge\\left(\\lnot x_{n}\\vee\\lnot\\bigoplus_{i=1}^{n-1}x_{i}\\right)$$
+$$\\lnot\\bigoplus_{i=1}^{n}x_{i}\\equiv\\lnot x_{n}\\oplus
+\\bigoplus_{i=1}^{n-1}x_{i}\\equiv\\left(x_{n}\\vee\\bigoplus_{i=1}^{n-1}x_{i}
+\\right)\\wedge\\left(\\lnot x_{n}\\vee\\lnot\\bigoplus_{i=1}^{n-1}x_{i}\\right)$$
 -}
 oddToCNF' :: Bool -> Int -> [[Bool]]
 oddToCNF' True  0 = [[]]

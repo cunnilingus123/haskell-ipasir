@@ -23,7 +23,6 @@ import SAT.IPASIR.ComplexityProblem
     , Result
     , Solutiontransform(..)
     , AssumingProblem(..)
-    , LBool(..)
     )
 
 createAssumingTest  :: forall s cp a r m t.

@@ -195,7 +195,6 @@ asLit (NVar v) = Neg v
 asLit form     = error $ "Can't transform that formula into a litaral."
                        ++ " See function asLit in SAT.IPASIR.Formula."
 
-
 -- | Makes a value into a variable. 
 var :: v -> Formula v
 var = return
@@ -213,6 +212,7 @@ l   &&* r   = All $ list l ++ list r
 
 -- | Infix operator for @Some@.
 (||*) :: GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
+No  ||* No  = No
 Yes ||* _   = Yes
 _   ||* Yes = Yes
 l   ||* r   = Some $ list l ++ list r
@@ -229,9 +229,11 @@ l ++* r = Odd $ list l ++ list r
         list x       = [x]
 
 -- | Infix operator implication.
-a  ->* b = notB a   ||* b
+(->*)  :: FormulaOperation s => GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
+a  ->* b = notB a ||* b
 
 -- | Infix operator equivalence.
+(<->*) :: FormulaOperation s => GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
 a <->* b = notB $ a ++* b
 
 infixr 5  &&*
@@ -255,7 +257,7 @@ class (Foldable (GeneralFormula s), Traversable (GeneralFormula s))
 
 instance FormulaOperation Normal where
     makeVar = Var
-    rFormula formula 
+    rFormula formula
         | isYes reduced  = All []
         | isNo  reduced  = Some []
         | otherwise      = transformer reduced

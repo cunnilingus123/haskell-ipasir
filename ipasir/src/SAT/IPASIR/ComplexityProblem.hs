@@ -10,21 +10,6 @@ import Data.Proxy (Proxy(..))
 import Data.Bifunctor (Bifunctor(..))
 import Control.Monad ((<=<))
 
-data LBool = LFalse | LUndef | LTrue
-    deriving (Show, Eq, Ord)
-
-instance Enum LBool where
-    toEnum = enumToLBool
-    fromEnum LTrue  =  1
-    fromEnum LUndef =  0
-    fromEnum _      = -1
-
-enumToLBool :: (Ord a, Num a) => a -> LBool
-enumToLBool i = case compare i 0 of
-    GT -> LTrue
-    EQ -> LUndef
-    _  -> LFalse
-
 class ComplexityProblem cp where
     type Solution cp
 
