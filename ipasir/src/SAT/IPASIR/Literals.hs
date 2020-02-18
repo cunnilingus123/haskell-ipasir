@@ -17,6 +17,7 @@ module SAT.IPASIR.Literals
 
 import Data.String (IsString(..))
 import Data.Bits (xor)
+import Data.Bifunctor (first)
 
 import Control.Monad (Monad(..), ap)
 import Control.Comonad (Comonad(..))
@@ -51,7 +52,9 @@ enumToLBool i = case compare i 0 of
     _  -> LFalse
 
 instance Read LBool where
-
+    readsPrec prec ('1':str) = [(LTrue ,str)]
+    readsPrec prec ('0':str) = [(LFalse,str)]
+    readsPrec prec ( _ :str) = [(LUndef,str)]
 
 -- | A literal is a positive or negative atom.
 data Lit a
@@ -86,6 +89,11 @@ instance Comonad Lit where
 instance Show a => Show (Lit a) where
     show (Pos a) = '+' : show a
     show (Neg a) = '-' : show a
+
+instance Read a => Read (Lit a) where
+    readsPrec prec ('+':rest) = first Pos <$> readsPrec prec rest
+    readsPrec prec ('-':rest) = first Neg <$> readsPrec prec rest
+    readsPrec prec _          = []
 
 instance IsString a => IsString (Lit a) where
     fromString = return . fromString

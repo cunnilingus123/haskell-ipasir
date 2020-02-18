@@ -1,25 +1,21 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
--- {-# LANGUAGE DeriveFunctor #-}
 
 {- |This module provides
 
-        1. The definition of SAT and XSAT formulas. 
-        2. Variable based SAT and XSAT formulas
+        1. The definition of SAT aformulas. 
+        2. Variable based SAT formulas
 
     Definition of CNF: Every propositional formula of the form 
     $$ \\varphi = \\bigwedge_{i=1}^{n} \\bigvee_{j=1}^{m_i} (\\lnot) x_{i,j} $$
     We call a logical formula to be SAT iff the encoding is in CNF.
-
-    Definition of XCNF: Every propositional formula of the form 
-    $$ \\varphi = cnf \\wedge \\underbrace{\\bigwedge_{i=1}^{n} \\left( (\\lnot) \\bigoplus_{j=1}^{m_i} x_{i,j} \\right)}_{\\text{Gaussian system}} $$
-    where \\( cnf \\) is a CNF and \\( \\oplus \\) is the exclusive or. 
-    Likewise the XCNF is the encoding of an XSAT.
 -}
 
 module SAT.IPASIR.SAT
     ( SAT (..)
+    , SATLit (..)
+    , VarsReduction
     , SATRedLBoolBool (..)
     , SATRedBoolLBool (..)
     , SATRedEnum (..)
@@ -31,7 +27,7 @@ module SAT.IPASIR.SAT
 import Data.Array (Array, assocs, bounds, ixmap, (!))
 import Data.Ix (Ix(..))
 import Data.Bifunctor (Bifunctor(..))
-import Data.Set (Set, fromList, (\\), unions, lookupIndex, size, toAscList)
+import Data.Set (Set, (\\), lookupIndex, size, toAscList)
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -52,7 +48,7 @@ newtype SAT e b = SAT {satInstance :: [[e]]}
     deriving (Show, Read)
 
 newtype SATLit v b = SATLit {satLitInstance :: [[Lit v]]}
-    deriving (Show)
+    deriving (Show, Read)
 
 instance Ord v => ComplexityProblem (SATLit v b) where
     type Solution (SATLit v b) = Map v b
@@ -69,13 +65,14 @@ instance (Enum e, Ix e, Ord v) => Reduction (VarsReduction v e b) where
     newReduction = VarsReduction []
     parseEncoding (VarsReduction l) (SATLit enc) = (enc', VarsReduction l')
         where
-            vars = fromList $ map extract $ concat enc
+            vars = Set.fromList $ map extract $ concat enc
             newVars = vars \\ Set.unions l
+
             enc' = SAT $ (map . map) (toEnum . flatLit . fmap (parseLit 1 l')) enc
             l'
-                | null newVars = l 
-                | otherwise    = l ++ [newVars]
-            -- parseLit :: Int -> [Set v] -> v -> Int
+                | null newVars = l
+ --               | Set.findMax (last l) < Set.findMin newVars = init l ++ [Set.union newVars (last l)]
+                | otherwise    = newVars : l
             parseLit i (s:ss) x = case lookupIndex x s of
                 Nothing -> parseLit (i + size s) ss x
                 Just t  -> i + t
@@ -85,14 +82,14 @@ instance (Enum e, Ix e, Ord v) => Reduction (VarsReduction v e b) where
         where
             subMap offset set = Map.fromAscList $ imap (\i v -> (v, array ! toEnum (i+offset)) ) 
                                                 $ toAscList set
-            (_,m) = foldl (\(offset, res) set -> (offset + size set, subMap offset set : res)) (1,[]) l
+            (_,m) = foldr (\set (offset, res) -> (offset + size set, subMap offset set : res)) (1,[]) l
 
 
 instance Bifunctor SATLit where
     bimap f _ (SATLit cnf) = SATLit $ (map . map . fmap) f cnf
 
 instance Ord e => Eq (SAT e b) where
-    SAT a == SAT b = on (==) (fromList . map fromList)  a b
+    SAT a == SAT b = on (==) (Set.fromList . map Set.fromList)  a b
 
 instance Bifunctor SAT where
     bimap f _ (SAT cnf) = SAT $ (map . map) f cnf
