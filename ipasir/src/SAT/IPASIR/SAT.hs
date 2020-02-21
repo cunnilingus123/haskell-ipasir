@@ -1,6 +1,11 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
+
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia #-}
 
 {- |This module provides
 
@@ -16,9 +21,7 @@ module SAT.IPASIR.SAT
     ( SAT (..)
     , SATLit (..)
     , VarsReduction
-    , SATRedLBoolBool (..)
-    , SATRedBoolLBool (..)
-    , SATRedEnum (..)
+    , RedBoolLBool (..)
     , module Export
     , LBool(..)
     , enumToLBool
@@ -33,6 +36,9 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Function (on)
 import Data.List.Index (imap)
+
+import Control.Applicative (liftA2)
+
 import Foreign.C.Types (CInt)
 
 import SAT.IPASIR.Literals (LBool(..), Lit, flatLit, extract, enumToLBool)
@@ -44,10 +50,10 @@ import SAT.IPASIR.ComplexityProblem as Export
 --   The 'Solution' is expressed using b (either 'Bool' or 'LBool').
 --   Note that the 'Eq' instance is defined by: a == b iff every clause in a
 --   is a sublist of a clause in b and vice versa.
-newtype SAT e b = SAT {satInstance :: [[e]]}
+newtype SAT e b = SAT [[e]]
     deriving (Show, Read)
 
-newtype SATLit v b = SATLit {satLitInstance :: [[Lit v]]}
+newtype SATLit v b = SATLit [[Lit v]]
     deriving (Show, Read)
 
 instance Ord v => ComplexityProblem (SATLit v b) where
@@ -84,7 +90,6 @@ instance (Enum e, Ix e, Ord v) => Reduction (VarsReduction v e b) where
                                                 $ toAscList set
             (_,m) = foldr (\set (offset, res) -> (offset + size set, subMap offset set : res)) (1,[]) l
 
-
 instance Bifunctor SATLit where
     bimap f _ (SATLit cnf) = SATLit $ (map . map . fmap) f cnf
 
@@ -109,71 +114,50 @@ instance (Enum e, Ix e, Num e) => Solutiontransform (SAT e Bool) where
     solutionToEncoding    = SAT . map pure              . sol2Enc ((*) . pred . (*2) . parseEnum)
     negSolutionToEncoding = SAT .     pure . map negate . sol2Enc ((*) . pred . (*2) . parseEnum)
 
-sol2Enc :: (Enum e, Ix e, Num e, Enum b) => (b -> e -> e) -> Array e b -> [e]
-sol2Enc f = filter (/=0) . map (uncurry (flip f)) . assocs
-
--- | This reduction changes the Boolean type from 'Bool' to 'LBool'.
-data SATRedLBoolBool e = SATRedLBoolBool
-
-instance (Enum e, Ix e) => Reduction (SATRedLBoolBool e) where
-    type CPFrom (SATRedLBoolBool e) = SAT e LBool
-    type CPTo   (SATRedLBoolBool e) = SAT e Bool
-    newReduction    = SATRedLBoolBool
-    parseEncoding _ = (, SATRedLBoolBool) . second undefined
-    parseSolution _ = fmap boolToLBool
-        where
-            boolToLBool :: Bool -> LBool
-            boolToLBool True = LTrue
-            boolToLBool _    = LFalse
-
-instance (Enum e, Ix e) => AReduction (SATRedLBoolBool e) where
-    parseConflict   _ = id
-    parseAssumption _ = pure
-
--- | This reduction changes the Boolean type from 'LBool' to 'Bool'.
---   Undefined Variables are set to 'False'.
-data SATRedBoolLBool e = SATRedBoolLBool
-
-instance (Enum e, Ix e) => Reduction (SATRedBoolLBool e) where
-    type CPFrom (SATRedBoolLBool e) = SAT e Bool
-    type CPTo   (SATRedBoolLBool e) = SAT e LBool
-    newReduction    = SATRedBoolLBool
-    parseEncoding _ = (, SATRedBoolLBool) . second undefined
-    parseSolution _ = fmap lboolToBool
-        where
-            lboolToBool :: LBool -> Bool
-            lboolToBool LTrue = True
-            lboolToBool _     = False
-
-instance (Enum e, Ix e) => AReduction (SATRedBoolLBool e) where
-    parseConflict   _ = id
-    parseAssumption _ = pure
-
--- | This reduction changes the 'Enum' representing the variables of the 
---   SAT-formula.
-data SATRedEnum e i b = SATRedEnum
-
-instance (Enum e, Enum i, Ix e, Ix i) => Reduction (SATRedEnum e i b) where
-    type CPFrom (SATRedEnum e i b) = SAT e b
-    type CPTo   (SATRedEnum e i b) = SAT i b
-    newReduction = SATRedEnum
-    parseEncoding _ = (,SATRedEnum) . first parseEnum 
-    parseSolution _ = mapIndex parseEnum
-        where
-            mapIndex :: (Ix e, Enum e, Ix i, Enum i) => (e -> i) -> Array i a -> Array e a
-            mapIndex f arr = ixmap (bimap parseEnum parseEnum (bounds arr)) f arr
-
-instance (Enum e, Enum i, Ix e, Ix i) => AReduction (SATRedEnum e i b) where
-    parseConflict   _ = map parseEnum 
-    parseAssumption _ = pure . parseEnum
-
 parseEnum :: (Enum a, Enum b) => a -> b
 parseEnum = toEnum . fromEnum
 
-instance Ix CInt where
-    range (from, to) = [from..to]
-    index (from, to) i
-      | inRange (from, to) i = fromEnum $ i - from
-      | otherwise            = error $ "Index out of bounds Exception. Index:" 
-                                        ++ show i ++ " Bounds: " ++ show (from,to)
-    inRange (from, to) i = i >= from && i <= to
+sol2Enc :: (Enum e, Ix e, Num e, Enum b) => (b -> e -> e) -> Array e b -> [e]
+sol2Enc f = filter (/=0) . map (uncurry (flip f)) . assocs
+
+deriving via (BoolLBoolDerive SAT e)
+    instance (Enum e, Ix e) =>  Reduction (RedBoolLBool (SAT e))
+
+deriving via (BoolLBoolDerive SAT e)
+    instance (Enum e, Ix e) => AReduction (RedBoolLBool (SAT e))
+
+deriving via (BoolLBoolDerive SATLit v)
+    instance (Ord v) =>  Reduction (RedBoolLBool (SATLit v))
+
+deriving via (BoolLBoolDerive SATLit v)
+    instance (Ord v) => AReduction (RedBoolLBool (SATLit v))
+
+deriving via (LBoolTrueDerive SAT e)
+    instance (Enum e, Ix e) =>  Reduction (RedLBoolTrue (SAT e))
+
+deriving via (LBoolTrueDerive SAT e)
+    instance (Enum e, Ix e) => AReduction (RedLBoolTrue (SAT e))
+
+deriving via (LBoolTrueDerive SATLit v)
+    instance (Ord v) =>  Reduction (RedLBoolTrue (SATLit v))
+
+deriving via (LBoolTrueDerive SATLit v)
+    instance (Ord v) => AReduction (RedLBoolTrue (SATLit v))
+
+deriving via (LBoolFalseDerive SAT e)
+    instance (Enum e, Ix e) =>  Reduction (RedLBoolFalse (SAT e))
+
+deriving via (LBoolFalseDerive SAT e)
+    instance (Enum e, Ix e) => AReduction (RedLBoolFalse (SAT e))
+
+deriving via (LBoolFalseDerive SATLit v)
+    instance (Ord v) =>  Reduction (RedLBoolFalse (SATLit v))
+
+deriving via (LBoolFalseDerive SATLit v)
+    instance (Ord v) => AReduction (RedLBoolFalse (SATLit v))
+
+deriving via (EnumDerive SAT e i b)
+    instance (Enum e, Ix e, Enum i, Ix i) =>  Reduction (RedEnum SAT e i b)
+
+deriving via (EnumDerive SAT e i b)
+    instance (Enum e, Ix e, Enum i, Ix i) => AReduction (RedEnum SAT e i b)
