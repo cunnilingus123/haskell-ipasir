@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DerivingVia #-}
@@ -10,8 +11,10 @@
         2. Variable based XSAT formulas
 
     Definition of XCNF: Every propositional formula of the form 
-    $$ \\varphi = cnf \\wedge \\underbrace{\\bigwedge_{i=1}^{n} \\left( (\\lnot) \\bigoplus_{j=1}^{m_i} x_{i,j} \\right)}_{\\text{xnf}} $$
-    where \\( cnf \\) is a CNF and \\( \\oplus \\) is the exclusive or. Note, that the xnf is a gaussian system.
+    $$ \\varphi = cnf \\wedge \\underbrace{\\bigwedge_{i=1}^{n} 
+       \\left( (\\lnot) \\bigoplus_{j=1}^{m_i} x_{i,j} \\right)}_{\\text{xnf}} $$
+    where \\( cnf \\) is a CNF and \\( \\oplus \\) is the exclusive or.
+    Note, that the xnf is a gaussian system.
     We call a logical formula to be XSAT iff the encoding is in XCNF.
 -}
 
@@ -20,7 +23,11 @@ module SAT.IPASIR.XSAT where
 import Data.Map (Map)
 import Data.Ix (Ix)
 import Data.Array (Array)
+import Data.Function (on)
 import Data.Bifunctor (Bifunctor(..))
+import Data.Set (Set, fromList, toList, member, fromAscList)
+import Data.List (sort, minimumBy, partition)
+import Data.Bits ((.|.), (.&.), bit, xor)
 
 import SAT.IPASIR.SAT
 import SAT.IPASIR.Literals
@@ -44,8 +51,10 @@ satlitToXsatlit :: SATLit v b -> XSATLit v b
 satlitToXsatlit (SATLit f) = XSATLit f []
 
 data SatToXSatRed  sat = SatToXSatRed
+    deriving (Show)
 
 data XSatToSatRed xsat = XSatToSatRed
+    deriving (Show)
 
 instance (Enum e, Ix e) => ComplexityProblem (XSAT e b) where
     type Solution (XSAT e b) = Array e b
@@ -95,7 +104,7 @@ instance (Enum e, Ix e) => Reduction (XSatToSatRed (XSAT e b)) where
     type CPFrom (XSatToSatRed (XSAT e b)) = XSAT e b
     type CPTo   (XSatToSatRed (XSAT e b)) =  SAT e b
     newReduction = XSatToSatRed
-    parseEncoding _ (XSAT cnf xnf) = (undefined, XSatToSatRed)
+    parseEncoding _ xsat = (fullXSATToSat xsat, XSatToSatRed)
     parseSolution _ = id
 
 instance (Enum e, Ix e) => AReduction (XSatToSatRed (XSAT e b)) where
@@ -106,7 +115,7 @@ instance (Ord v) => Reduction (XSatToSatRed (XSATLit v b)) where
     type CPFrom (XSatToSatRed (XSATLit v b)) = XSATLit v b
     type CPTo   (XSatToSatRed (XSATLit v b)) =  SATLit v b
     newReduction = XSatToSatRed
-    parseEncoding _ (XSATLit cnf xnf) = (undefined, XSatToSatRed)
+    parseEncoding _ xsat = (fullXSATLitToSatLit xsat, XSatToSatRed)
     parseSolution _ = id
 
 instance (Ord v) => AReduction (XSatToSatRed (XSATLit v b)) where
@@ -154,3 +163,140 @@ deriving via (EnumDerive XSAT e i b)
 
 deriving via (EnumDerive XSAT e i b)
     instance (Enum e, Ix e, Enum i, Ix i) => AReduction (RedEnum XSAT e i b)
+
+fullXSATToSat :: Enum e => XSAT e b -> SAT e b
+fullXSATToSat xsat = first (toEnum . flatLit) $ SAT cnf'
+    where
+        XSAT cnf xnf = first (parseEnum . fromEnum) xsat
+        parseEnum i
+            | i > 0 = Pos i
+            | i < 0 = Neg $ negate i
+        SATLit cnf' = fullXSATLitToSatLit $ XSATLit cnf $ map sequence xnf
+
+fullXSATLitToSatLit :: forall v b. Ord v => XSATLit v b -> SATLit v b
+fullXSATLitToSatLit (XSATLit cnf xnf) = SATLit $ cnf'' ++ cnf'
+    where
+        (xnf', trivials) = gaussJordan xnf
+        cnf' :: [[Lit v]]
+        cnf' = fullXClauseToSAT =<< xnf' ++ trivials
+
+        replacings :: [(Lit v, Lit v)]
+        replacings = h =<< trivials
+
+        cnf'' :: [[Lit v]]
+        cnf'' = foldl (\cnf r -> (map . map) (`replace` r) cnf) cnf replacings
+
+        replace :: Lit v -> (Lit v, Lit v) -> Lit v
+        replace lit (x,y)
+            | lit == x  = y
+            | otherwise = lit
+
+        h :: ([v],Bool) -> [(Lit v, Lit v)]
+        h ([x,y],False) = [(Neg x, Neg y),(Pos x, Pos y)]
+        h ([x,y],True ) = [(Neg x, Pos y),(Pos x, Neg y)]
+        h _ = []
+
+
+fullXClauseToSAT :: ([v], Bool) -> [[Lit v]]
+fullXClauseToSAT ([x], True)  = [[Pos x]]
+fullXClauseToSAT ([x], False) = [[Neg x]]
+fullXClauseToSAT ((x:xs), b) = negativeWay ++ positiveWay
+    where
+        negativeWay = (Neg x :) <$> fullXClauseToSAT (xs, b)
+        positiveWay = (Pos x :) <$> fullXClauseToSAT (xs, not b)
+
+
+-- | Gauss elimination
+gaussElemination :: forall v. Ord v => [Lit [v]] -> [([v], Bool)]
+gaussElemination l = gaussElemination' $ map sorted l
+    where
+        sorted :: Lit [v] -> ([v], Bool)
+        sorted l = (oddTimes (extract l), isPositive l)
+        gaussElemination' :: [([v], Bool)] -> [([v], Bool)]
+        gaussElemination' l
+            | null l'   = []
+            | otherwise = m : gaussElemination' l''
+            where
+                l'  = filter filt l
+                l'' = symmetricDifferenceIf m <$> l'
+                m = minLine l'
+                filt :: ([v], Bool) -> Bool
+                filt ([],False) = False
+                filt ([],_)     = error "Not a solvable Gaussian system"
+                filt _          = True
+
+sample1 = [Pos [1,4,6],Pos [2,4,5],Neg [1,2,3],Neg [1,1,1]]
+sample2 = [Pos [1,2,3],Pos [2,3,4]]
+
+jordan :: Ord v => [([v], Bool)] -> [([v], Bool)]
+jordan = jordan' . reverse
+    where
+
+        jordan' :: Ord v => [([v], Bool)] -> [([v], Bool)]
+        jordan' = foldl (\res x -> line (x : res) : res ) []
+
+        line :: Ord v => [([v], Bool)] -> ([v], Bool)
+        line [x] = x
+        line (x@(v,b):y:xs) = first (lhs++) $ line (x':xs)
+            where
+                (lhs, rhs) = span (< head (fst y)) v
+                x' = symmetricDifferenceIf y (rhs, b)
+
+gaussJordan :: Ord v => [Lit [v]] -> ([([v], Bool)], [([v], Bool)] )
+gaussJordan sys = (sys'', trivials' ++ trivials'')
+    where
+        (sys' , trivials' ) = minimizeSmallLines $ gaussElemination sys
+        (sys'', trivials'') = minimizeSmallLines $ jordan sys'
+
+minimizeSmallLines :: Ord v => [([v], Bool)] -> ([([v], Bool)], [([v], Bool)] )
+minimizeSmallLines l = case smallClause l Nothing of
+    Nothing -> (l, [])
+    Just x  -> second (x:) $ minimizeSmallLines 
+                           $ filter (not . null . fst) 
+                           $ map (symmetricDifferenceIf x) l
+    where
+        smallClause :: [([v], Bool)] -> Maybe ([v], Bool) -> Maybe ([v], Bool)
+        smallClause [] r = r
+        smallClause (x:xs) r = case x of
+            ([_]  ,_) -> Just x
+            ([_,_],_) -> smallClause xs (Just x)
+            _         -> smallClause xs r
+
+-- | Sorts the list and removes every element, with an even occurance in the list.
+--   the Result doesnt have dublicates.
+--   > oddTimes [3,1,2,1,2,1,6] == [1,3,6]
+oddTimes :: Ord v => [v] -> [v]
+oddTimes = oddTimes' . sort
+    where
+        oddTimes' []  = []
+        oddTimes' [x] = [x]
+        oddTimes' (x:y:xs)
+            | x == y    =     oddTimes' xs
+            | otherwise = x : oddTimes' (y:xs)
+
+minLine :: Ord v => [([v],Bool)] -> ([v],Bool)
+minLine = minimumBy (compare `on` head . fst)
+
+-- | Only works on ordered lists. 
+symmetricDifferenceIf :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
+symmetricDifferenceIf x y
+    | b (fst y) = symmetricDifference x y
+    | otherwise = y
+    where
+        h = head $ fst x
+        b [] = False
+        b (y:ys) = case compare y h of
+            LT -> b ys
+            EQ -> True
+            _  -> False
+
+-- | Only works on ordered lists.
+symmetricDifference :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
+symmetricDifference (xs,xb) (ys,yb) = (symmetricDifference' xs ys, xor xb yb)
+    where
+        symmetricDifference' [] ys = ys
+        symmetricDifference' xs [] = xs
+        symmetricDifference' (x:xs) (y:ys) = case compare x y of
+            LT -> x : symmetricDifference' xs (y:ys)
+            GT -> y : symmetricDifference' (x:xs) ys
+            _  -> symmetricDifference' xs ys
