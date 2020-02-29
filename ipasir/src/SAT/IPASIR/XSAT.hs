@@ -205,7 +205,6 @@ fullXClauseToSAT ((x:xs), b) = negativeWay ++ positiveWay
         negativeWay = (Neg x :) <$> fullXClauseToSAT (xs, b)
         positiveWay = (Pos x :) <$> fullXClauseToSAT (xs, not b)
 
-
 -- | Gauss elimination
 gaussElemination :: forall v. Ord v => [Lit [v]] -> [([v], Bool)]
 gaussElemination l = gaussElemination' $ map sorted l
@@ -225,8 +224,6 @@ gaussElemination l = gaussElemination' $ map sorted l
                 filt ([],_)     = error "Not a solvable Gaussian system"
                 filt _          = True
 
-sample1 = [Pos [1,4,6],Pos [2,4,5],Neg [1,2,3],Neg [1,1,1]]
-sample2 = [Pos [1,2,3],Pos [2,3,4]]
 
 jordan :: Ord v => [([v], Bool)] -> [([v], Bool)]
 jordan = jordan' . reverse
@@ -242,11 +239,13 @@ jordan = jordan' . reverse
                 (lhs, rhs) = span (< head (fst y)) v
                 x' = symmetricDifferenceIf y (rhs, b)
 
+
 gaussJordan :: Ord v => [Lit [v]] -> ([([v], Bool)], [([v], Bool)] )
 gaussJordan sys = (sys'', trivials' ++ trivials'')
     where
         (sys' , trivials' ) = minimizeSmallLines $ gaussElemination sys
         (sys'', trivials'') = minimizeSmallLines $ jordan sys'
+
 
 minimizeSmallLines :: Ord v => [([v], Bool)] -> ([([v], Bool)], [([v], Bool)] )
 minimizeSmallLines l = case smallClause l Nothing of
@@ -277,7 +276,7 @@ oddTimes = oddTimes' . sort
 minLine :: Ord v => [([v],Bool)] -> ([v],Bool)
 minLine = minimumBy (compare `on` head . fst)
 
--- | Only works on ordered lists. 
+-- | Only works on ordered lists without doublicates.
 symmetricDifferenceIf :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
 symmetricDifferenceIf x y
     | b (fst y) = symmetricDifference x y
@@ -290,7 +289,9 @@ symmetricDifferenceIf x y
             EQ -> True
             _  -> False
 
--- | Only works on ordered lists.
+-- | Only works on ordered lists without doublicates. See 
+--   [Wikipedia: symmetric difference](https://en.wikipedia.org/wiki/Symmetric_difference) 
+--   for further information.
 symmetricDifference :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
 symmetricDifference (xs,xb) (ys,yb) = (symmetricDifference' xs ys, xor xb yb)
     where

@@ -2,8 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE StandaloneDeriving, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {- |This module provides
@@ -79,74 +80,25 @@ import SAT.IPASIR.Literals (Lit(..), isPositive, fromBool, neg)
 import SAT.IPASIR.Clauses (Clause(..), NormalForm, CNF, partitionClauses, oddToCNF)
 import SAT.IPASIR.VarCache (Cache, cacheState, newHelper, newVar, newVars)
 
--- | A normal formula of any form.
-type  Formula v = GeneralFormula Normal     v
-
-{- | A formula after constants ('Yes' and 'No') are eliminated.
-
-     And where every 'All', 'Some' and 'Odd' consists of 2 elements or more.
-     (this is not checked by the type system, but 'rFormula' creates it correct from a 'Formula').
--}
-type RFormula v = GeneralFormula Reduced    v
-
-{- | A formula after reducing (remove constants) and applying De Morgan's laws.
-
-     And where every 'All', 'Some' and 'Odd' consists of 2 elements or more.
-     (This is not checked by the type system, but 'demorgan' creates it correct from a 'Formula').
--}
-type DFormula v = GeneralFormula Demorganed v
-
--- | Label for a normal formula of any form. See 'Formula'.
-data Normal
--- | Label for a formula after constants are eliminated. See 'RFormula'.
-data Reduced
--- | Label for a formula after De Morgan's laws was applied. See 'DFormula'.
-data Demorganed
-
--- | class of labels that may contain @Not@ or @Var@. This includes 'Formula'
---   and 'RFormula' but not 'DFormula'
-class Upper a where
-instance Upper Normal where
-instance Upper Reduced where
-
 -- | A Formula that combines @Normal@, @Reduced@ and @Demorganed@ formulas
-data GeneralFormula s v where 
-    -- | A variable.
-    Var  :: Upper s => v -> GeneralFormula s v
-    -- | A positive literal.
-    PVar :: v -> GeneralFormula Demorganed v
-    -- | A negative literal.
-    NVar :: v -> GeneralFormula Demorganed v
-    -- | The formula @True@.
-    Yes  :: GeneralFormula Normal v
-    -- | The formula @False@.
-    No   :: GeneralFormula Normal v
-    -- | Negation.
-    Not  :: Upper s => GeneralFormula s v -> GeneralFormula s v
-    -- | All are @True@. It realized @and@.
-    All  :: [GeneralFormula s v] -> GeneralFormula s v
-    -- | At least one is @True@. It realized @or@.
-    Some :: [GeneralFormula s v] -> GeneralFormula s v
-    -- | An odd number is @True@. It realized @exclusive or@. 
-    Odd  :: [GeneralFormula s v] -> GeneralFormula s v
+data Formula v
+    = Var v            -- ^ A variable.
+    | No               -- ^ The formula @False@.
+    | Yes              -- ^ The formula @True@.
+    | Not  (Formula v) -- ^ Negation.
+    | All  [Formula v] -- ^ All are @True@. It realized @and@.
+    | Some [Formula v] -- ^ At least one is @True@. It realized @or@.
+    | Odd  [Formula v] -- ^ An odd number is @True@. It realized @exclusive or@. 
+    deriving (Show, Eq, Functor, Foldable, Traversable)
 
-deriving instance Show v => Show        (GeneralFormula s v)
-deriving instance Ord v  => Ord         (GeneralFormula s v)
-deriving instance Eq v   => Eq          (GeneralFormula s v)
-deriving instance           Functor     (GeneralFormula s)
-deriving instance           Foldable    (GeneralFormula s)
-deriving instance           Traversable (GeneralFormula s)
-
-instance FormulaOperation s => Applicative (GeneralFormula s) where
+instance Applicative Formula where
     pure  = return
     (<*>) = ap
 
-instance FormulaOperation s => Monad (GeneralFormula s) where
-    return = makeVar
+instance Monad Formula where
+    return            = Var
     (>>=) (Var  v)  f = f v
-    (>>=) (PVar v)  f = f v
-    (>>=) (NVar v)  f = notB $ f v
-    (>>=) (Not  v)  f = notB $ v >>= f
+    (>>=) (Not  v)  f = Not $ v >>= f
     (>>=) (All  vs) f = All  $ map (>>= f) vs
     (>>=) (Some vs) f = Some $ map (>>= f) vs
     (>>=) (Odd  vs) f = Odd  $ map (>>= f) vs
@@ -157,7 +109,7 @@ instance FormulaOperation s => Monad (GeneralFormula s) where
 instance (IsString v) => IsString (Formula v) where
     fromString = return . fromString
 
-unpackAllVars :: GeneralFormula s v -> [v]
+unpackAllVars :: Formula v -> [v]
 unpackAllVars (All  vs) = concatMap unpackAllVars vs
 unpackAllVars (Some vs) = concatMap unpackAllVars vs
 unpackAllVars (Odd  vs) = concatMap unpackAllVars vs
@@ -165,82 +117,102 @@ unpackAllVars (Not  v ) = unpackAllVars v
 unpackAllVars f = maybeToList $ unpackVar f
 
 -- | If the formula is a variable its value is returned in a @Just@. Else @Nothing@
-unpackVar :: GeneralFormula s v -> Maybe v
+unpackVar :: Formula v -> Maybe v
 unpackVar (Var  v) = Just v
-unpackVar (PVar v) = Just v
-unpackVar (NVar v) = Just v
 unpackVar _        = Nothing
 
 -- | Checks if a formula is a variable. This doesn't include @Yes@ or @No@.
-isVar :: GeneralFormula s v -> Bool
+isVar :: Formula v -> Bool
 isVar = isJust . unpackVar
 
 -- | Checks if a formula is a leaf. This includes variables, @Yes@ and @No@.
-isTerminal :: GeneralFormula s v -> Bool
+isTerminal :: Formula v -> Bool
 isTerminal Yes = True
 isTerminal No  = True
 isTerminal f   = isVar f
 
--- | Transforms a literal into a leaf.
-asLVar :: Lit v -> DFormula v
-asLVar (Pos v) = PVar v
-asLVar (Neg v) = NVar v
-
--- | Inverse function of @asLVar@. Returns an error, iff it is
---   not in the range of @asLVar@. This happens iff the formula 
---   is not a leaf.
-asLit :: DFormula v -> Lit v
-asLit (PVar v) = Pos v
-asLit (NVar v) = Neg v
-asLit form     = error $ "Can't transform that formula into a litaral."
-                       ++ " See function asLit in SAT.IPASIR.Formula."
-
--- | Makes a value into a variable. 
-var :: v -> Formula v
-var = return
+-- | Checks if a formula is a leaf. This includes variables, @Yes@ and @No@.
+innerFormulas :: Formula v -> [Formula v]
+innerFormulas (All l)  = l
+innerFormulas (Some l) = l
+innerFormulas (Odd l)  = l
 
 -- | Infix operator for @All@.
-(&&*) :: GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
-Yes &&* Yes = Yes
-No  &&* _   = No
-_   &&* No  = No
-l   &&* r   = All $ list l ++ list r
-    where
-        list (All x) = x
-        list Yes     = []
-        list x       = [x]
+(&&*) :: Formula v -> Formula v -> Formula v
+l &&* r = All [l,r]
 
 -- | Infix operator for @Some@.
-(||*) :: GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
-No  ||* No  = No
-Yes ||* _   = Yes
-_   ||* Yes = Yes
-l   ||* r   = Some $ list l ++ list r
-    where
-        list (Some x) = x
-        list No       = []
-        list x        = [x]
+(||*) :: Formula v -> Formula v -> Formula v
+l ||* r = Some [l,r]
 
 -- | Infix operator for @Odd@. This operator stands for xor. 
-(++*) :: GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
-l ++* r = Odd $ list l ++ list r
-    where
-        list (Odd x) =  x
-        list x       = [x]
+(++*) :: Formula v -> Formula v -> Formula v
+l ++* r = Odd [l,r]
 
 -- | Infix operator implication.
-(->*)  :: FormulaOperation s => GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
-a  ->* b = notB a ||* b
+(->*)  :: Formula v -> Formula v -> Formula v
+a  ->* b = Not a ||* b
 
 -- | Infix operator equivalence.
-(<->*) :: FormulaOperation s => GeneralFormula s v -> GeneralFormula s v -> GeneralFormula s v
-a <->* b = notB $ a ++* b
+(<->*) :: Formula v -> Formula v -> Formula v
+a <->* b = Not $ a ++* b
 
 infixr 5  &&*
 infixr 4  ||*
 infixr 3  ++*
 infixl 2  ->*
 infixr 1 <->*
+
+bFormula :: Formula v -> Bool -> Formula v
+bFormula Yes False = No
+bFormula No  False = Yes
+bFormula (All l)  False = Some l
+bFormula (Some l) False = All l
+bFormula (Odd l)  False = error "Das hab ich noch nicht gemacht " -- TODO muss ich noch machen
+bFormula x        True  = x
+
+flatten :: Formula v -> Bool -> Formula v
+flatten outer b = newL <$ x
+    where
+        newL = others ++ concatMap innerFormulas sames
+        (sames, others) = partition (same x) $ innerFormulas outer
+        x = bFormula outer b
+        same (All _)  (All _)  = True
+        same (Some _) (Some _) = True
+        same (Odd _)  (Odd _)  = True
+        same _        _        = False
+        x <$ (All  _) = All x
+        x <$ (Some _) = Some x
+        x <$ (Odd  _) = Odd x
+
+{- |
+
+-}
+
+rFormula :: Eq v => Formula v -> Bool -> Formula (Lit v)
+rFormula (All  [])  b = bFormula Yes b
+rFormula (Some [])  b = bFormula Yes b
+rFormula (Odd  [])  b = bFormula Yes b
+rFormula (All  [x]) b = rFormula x b
+rFormula (Some [x]) b = rFormula x b
+rFormula (Odd  [x]) b = rFormula x b
+rFormula (Var  x) True = Var (Pos x)
+rFormula (Var  x) _    = Var (Neg x)
+rFormula (Not  x) b  = rFormula x $ not b
+rFormula (Odd  x) b = error "Odds hab ich noch nicht geschrieben"
+rFormula f b
+    | killer `elem` innerLists = killer
+    | otherwise                = t
+    where
+        l = innerFormulas f
+        innerLists = filter (/=neutral) $ map (`rFormula` b) l
+        t = flatten (All innerLists) b
+        neutral  = rFormula $ [] <$ f       -- either Yes or No
+        killer   = rFormula $ Not $ neutral -- either Yes or No
+
+
+{-}
+
 
 -- | Defines for the different formula steps ('Formula','RFormula','DFormula')
 --   some general operations.
@@ -652,3 +624,5 @@ litOfXor ds = do
     -- Define z <-> x1 ⊕ ... ⊕ xn 
     addClause $ XOr $ neg $ (extract z:) <$> ds
     return z
+
+-}
