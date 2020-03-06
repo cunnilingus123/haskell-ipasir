@@ -41,7 +41,8 @@ import Control.Applicative (liftA2)
 
 import Foreign.C.Types (CInt)
 
-import SAT.IPASIR.Literals (LBool(..), Lit, flatLit, extract, enumToLBool)
+import SAT.IPASIR.Literals (Lit, flatLit, extract)
+import SAT.IPASIR.LBool (LBool(..), enumToLBool)
 import SAT.IPASIR.ComplexityProblem as Export
 
 -- | A representative of the 
@@ -71,10 +72,9 @@ instance (Enum e, Ix e, Ord v) => Reduction (VarsReduction v e b) where
     newReduction = VarsReduction []
     parseEncoding (VarsReduction l) (SATLit enc) = (enc', VarsReduction l')
         where
-            vars = Set.fromList $ map extract $ concat enc
+            vars    = Set.fromList $ map extract $ concat enc
             newVars = vars \\ Set.unions l
-
-            enc' = SAT $ (map . map) (toEnum . flatLit . fmap (parseLit 1 l')) enc
+            enc'    = SAT $ (map . map) (toEnum . flatLit . fmap (parseLit 1 l')) enc
             l'
                 | null newVars = l
  --               | Set.findMax (last l) < Set.findMin newVars = init l ++ [Set.union newVars (last l)]
@@ -82,8 +82,6 @@ instance (Enum e, Ix e, Ord v) => Reduction (VarsReduction v e b) where
             parseLit i (s:ss) x = case lookupIndex x s of
                 Nothing -> parseLit (i + size s) ss x
                 Just t  -> i + t
-
- --   parseSolution :: r -> Solution (CPTo r) -> Solution (CPFrom r)
     parseSolution (VarsReduction l) array = Map.unions m
         where
             subMap offset set = Map.fromAscList $ imap (\i v -> (v, array ! toEnum (i+offset)) ) 

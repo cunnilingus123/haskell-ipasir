@@ -5,14 +5,12 @@
 
 module SAT.IPASIR.Literals
     ( Lit (..)
-    , LBool (..)
     , lit
     , fromBool
     , neg
     , isPositive
     , extract
     , flatLit
-    , enumToLBool
     ) where
 
 import Data.String (IsString(..))
@@ -22,39 +20,7 @@ import Data.Bifunctor (first)
 import Control.Monad (Monad(..), ap)
 import Control.Comonad (Comonad(..))
 
--- | A solution for a single variable.
--- @Just a@ indicates that the variable is @a@ in the solution
--- @Nothing@ indicates that the variable is not important for the solution.
--- both @True@ and @False@ are valid assignments.
--- 
--- Working with this representation may be cumbersome. If you do not want to
--- deal with unimportant variables pass your solutions through @expandSolution@.
-data LBool = LFalse | LUndef | LTrue deriving (Eq,Ord,Bounded)
 
-instance Show LBool where
-    show LTrue  = "1"
-    show LFalse = "0"
-    show LUndef = "?"
-
-instance Enum LBool where
-    fromEnum LTrue  =  1
-    fromEnum LFalse = -1
-    fromEnum LUndef = 0
-    toEnum i
-        | i == 0    = LUndef
-        | i <  0    = LFalse
-        | otherwise = LTrue
-
-enumToLBool :: (Ord a, Num a) => a -> LBool
-enumToLBool i = case compare i 0 of
-    GT -> LTrue
-    EQ -> LUndef
-    _  -> LFalse
-
-instance Read LBool where
-    readsPrec prec ('1':str) = [(LTrue ,str)]
-    readsPrec prec ('0':str) = [(LFalse,str)]
-    readsPrec prec ( _ :str) = [(LUndef,str)]
 
 -- | A literal is a positive or negative atom.
 data Lit a
@@ -76,7 +42,7 @@ instance Applicative Lit where
 instance Monad Lit where
     l >>= f = s `lit` extract l'
         where
-            s = isPositive l `xor` isPositive l'
+            s = isPositive l == isPositive l'
             l' = f $ extract l
 
 instance Comonad Lit where

@@ -15,7 +15,7 @@ import Foreign.C.Types (CInt)
 
 import Control.Monad ((<=<))
 
-import SAT.IPASIR.Literals (LBool(..))
+import SAT.IPASIR.LBool (LBool(..))
 
 class ComplexityProblem cp where
     type Solution cp
@@ -23,6 +23,9 @@ class ComplexityProblem cp where
 class (ComplexityProblem cp) => AssumingProblem cp where
     type Assumption cp
     type Conflict cp
+
+class (ComplexityProblem cp) => NPProblem cp where
+    checkModel :: Solution cp -> cp -> Bool
 
 -- | Every 'Solver' returns either a 'Solution' (also called model or proof).
 type Result cp = Maybe (Solution cp)

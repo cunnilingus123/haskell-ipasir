@@ -47,6 +47,18 @@ satToXsat (SAT f) = XSAT f []
 data XSATLit v b = XSATLit [[Lit v]] [Lit [v]]
     deriving (Show, Read)
 
+xlitsToClause :: [Lit v] -> Lit [v]
+xlitsToClause = xlitsToClause' False []
+    where
+        xlitsToClause' :: Bool -> [v] -> [Lit v] -> Lit [v]
+        xlitsToClause' False l [] = Pos l
+        xlitsToClause' _     l [] = Neg l
+        xlitsToClause' b     l (Pos x: xs) = xlitsToClause'      b  (x:l) xs
+        xlitsToClause' b     l (Neg x: xs) = xlitsToClause' (not b) (x:l) xs
+
+combineXSATLit :: XSATLit v b -> XSATLit v b -> XSATLit v b
+combineXSATLit (XSATLit cnf xnf) (XSATLit cnf' xnf') = XSATLit (cnf ++ cnf') (xnf ++ xnf')
+
 satlitToXsatlit :: SATLit v b -> XSATLit v b
 satlitToXsatlit (SATLit f) = XSATLit f []
 
