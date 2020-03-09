@@ -67,8 +67,6 @@ import SAT.IPASIR.LBool (LBool(..), lnot, land, lor, lxor)
 import SAT.IPASIR.XSAT (XSATLit(..), combineXSATLit, xlitsToClause)
 import SAT.IPASIR.ComplexityProblem
 
-import Debug.Trace
-
 newtype CSATLit v b = CSATLit (Formula v)
     deriving (Show, Eq)
 
@@ -140,7 +138,7 @@ instance Monad Formula where
 instance (IsString v) => IsString (Formula v) where
     fromString = return . fromString
 
--- | Checks if a formula is a leaf. This includes variables, @Yes@ and @No@.
+
 innerFormulas :: Formula v -> [Formula v]
 innerFormulas (All l)  = l
 innerFormulas (Some l) = l
@@ -202,14 +200,14 @@ simplifyFormula f = rFormula f True
         rFormula (Odd  l) False = rFormula (Odd (Yes:l)) True
         rFormula (Odd  l) _ = case innerForms of 
             []  -> bFormula Yes signed
-            [_] ->  head' innerForms'
+            [_] -> head innerForms'
             _   -> flatten (Odd innerForms') True
             where
                 (yesses, innerForms) = partition (==Yes) $ filter (/=No) $ map simplifyFormula l
                 signed = odd $ length yesses
                 firstNegated = fmap join $ simplifyFormula $ Not $ head innerForms
             --    firstNegated = head' $ filter (`notElem` [Yes, No]) $ simplifyFormula . Not <$> l
-                head' = fst . fromMaybe (error "MERKWÜRDIG") . uncons
+            --    head' = fst . fromMaybe (error "MERKWÜRDIG") . uncons
                 innerForms'
                     | signed    = firstNegated : tail innerForms
                     | otherwise = innerForms
