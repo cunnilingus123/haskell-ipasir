@@ -40,7 +40,7 @@ module SAT.IPASIR.Formula where
     , formulaToCNF
     , normalformToFormula
     , partitionAll
-    , partitionSome
+    , partitionAny
     , partitionOdd
     , lit2ELit
     , transCnf
@@ -60,12 +60,12 @@ import Data.Either (isRight)
 
 import Control.Monad (ap, join)
 import Control.Monad.Trans.State.Lazy (State, get, modify, runState)
-import Control.Comonad (extract)
 
-import SAT.IPASIR.Literals (Lit(..), lit, neg)
+import SAT.IPASIR.Literals (Literal(Variable), Lit(..), lit, neg)
 import SAT.IPASIR.LBool (LBool(..), lnot, land, lor, lxor)
 import SAT.IPASIR.XSAT (XSATLit(..), combineXSATLit, xlitsToClause)
 import SAT.IPASIR.ComplexityProblem
+import SAT.IPASIR.Printing (Printer(..))
 
 newtype CSATLit v b = CSATLit (Formula v)
     deriving (Show, Eq)
@@ -87,10 +87,10 @@ instance (Ord v) => NPProblem (CSATLit v LBool) where
             go m (Var v)  = fromMaybe LUndef $ m !? v
             go _ No       = LFalse
             go _ Yes      = LTrue
-            go m (Not  f) = lnot $ go m f
-            go m (All  l) = foldl land LTrue  $ map (go m) l
-            go m (Some l) = foldl lor  LFalse $ map (go m) l
-            go m (Odd  l) = foldl lxor LFalse $ map (go m) l
+            go m (Not f) = lnot $ go m f
+            go m (All l) = foldl land LTrue  $ map (go m) l
+            go m (Any l) = foldl lor  LFalse $ map (go m) l
+            go m (Odd l) = foldl lxor LFalse $ map (go m) l
 
 newtype CSatToXSatRed csat = CSatToXSatRed Int
 
@@ -111,46 +111,85 @@ instance (Ord v) => AReduction (CSatToXSatRed (CSATLit v b)) where
 
 -- | A Formula that combines @Normal@, @Reduced@ and @Demorganed@ formulas
 data Formula v
-    = Var v            -- ^ A variable.
-    | No               -- ^ The formula @False@.
-    | Yes              -- ^ The formula @True@.
-    | Not  (Formula v) -- ^ Negation.
-    | All  [Formula v] -- ^ All are @True@. It realized @and@.
-    | Some [Formula v] -- ^ At least one is @True@. It realized @or@.
-    | Odd  [Formula v] -- ^ An odd number is @True@. It realized @exclusive or@. 
-    deriving (Show, Eq, Functor, Foldable, Traversable)
+    = Var v           -- ^ A variable.
+    | No              -- ^ The formula @False@.
+    | Yes             -- ^ The formula @True@.
+    | Not (Formula v) -- ^ Negation.
+    | All [Formula v] -- ^ All are @True@. It realized @and@.
+    | Any [Formula v] -- ^ At least one is @True@. It realized @or@.
+    | Odd [Formula v] -- ^ An odd number is @True@. It realized @exclusive or@.
+    deriving (Eq, Functor, Foldable, Traversable)
+
+isYes :: Formula v -> Bool
+isYes Yes = True
+isYes _   = False
+
+isNo :: Formula v -> Bool
+isNo No = True
+isNo _  = False
+
+instance Show v => Show (Formula v) where
+    show f = show $ toPrinter f
+        where
+            toPrinter :: Formula v -> Printer
+            toPrinter (Var v)       = Terminal $ show $ show v
+            toPrinter Yes           = Terminal "YES"
+            toPrinter No            = Terminal "NO"
+            toPrinter (All l)       = Roundup "ALL" $ map toPrinter l
+            toPrinter (Any l)       = Roundup "ANY" $ map toPrinter l
+            toPrinter (Odd l)       = Roundup "ODD" $ map toPrinter l
+            toPrinter (Not (Not f)) = toPrinter f
+            toPrinter (Not (All l)) = Roundup "NOT ALL"$ map toPrinter l
+            toPrinter (Not (Any l)) = Roundup "NONE"   $ map toPrinter l
+            toPrinter (Not (Odd l)) = Roundup "EVEN"   $ map toPrinter l
+            toPrinter (Not t)       = Negation $ toPrinter t
+
+instance Read v => Read (Formula v) where
+    readsPrec i str = first fromPrinter <$> readsPrec i str 
+        where
+            fromPrinter :: Printer -> Formula v
+            fromPrinter (Terminal "YES")      = Yes
+            fromPrinter (Terminal "NO")       = No
+            fromPrinter (Terminal s)          = Var $ read $ read s
+            fromPrinter (Negation p)          = Not $ fromPrinter p
+            fromPrinter (Roundup "ALL" l)     = All $ map fromPrinter l
+            fromPrinter (Roundup "ANY" l)     = Any $ map fromPrinter l
+            fromPrinter (Roundup "ODD" l)     = Odd $ map fromPrinter l
+            fromPrinter (Roundup "NOT ALL" l) = Not $ All $ map fromPrinter l
+            fromPrinter (Roundup "NONE" l)    = Not $ Any $ map fromPrinter l
+            fromPrinter (Roundup "EVEN" l)    = Not $ Odd $ map fromPrinter l
+
 
 instance Applicative Formula where
     pure  = return
     (<*>) = ap
 
 instance Monad Formula where
-    return            = Var
-    (>>=) (Var  v)  f = f v
-    (>>=) (Not  v)  f = Not $ v >>= f
-    (>>=) (All  vs) f = All  $ map (>>= f) vs
-    (>>=) (Some vs) f = Some $ map (>>= f) vs
-    (>>=) (Odd  vs) f = Odd  $ map (>>= f) vs
-    (>>=) Yes       _ = Yes
-    (>>=) No        _ = No
+    return           = Var
+    (>>=) (Var v)  f = f v
+    (>>=) (Not v)  f = Not $ v >>= f
+    (>>=) (All vs) f = All $ map (>>= f) vs
+    (>>=) (Any vs) f = Any $ map (>>= f) vs
+    (>>=) (Odd vs) f = Odd $ map (>>= f) vs
+    (>>=) Yes      _ = Yes
+    (>>=) No       _ = No
 
 -- | For easy @Var@ creation.
 instance (IsString v) => IsString (Formula v) where
     fromString = return . fromString
 
-
 innerFormulas :: Formula v -> [Formula v]
-innerFormulas (All l)  = l
-innerFormulas (Some l) = l
-innerFormulas (Odd l)  = l
+innerFormulas (All l) = l
+innerFormulas (Any l) = l
+innerFormulas (Odd l) = l
 
 -- | Infix operator for @All@.
 (&&*) :: Formula v -> Formula v -> Formula v
 l &&* r = All [l,r]
 
--- | Infix operator for @Some@.
+-- | Infix operator for @Any@.
 (||*) :: Formula v -> Formula v -> Formula v
-l ||* r = Some [l,r]
+l ||* r = Any [l,r]
 
 -- | Infix operator for @Odd@. This operator stands for xor. 
 (++*) :: Formula v -> Formula v -> Formula v
@@ -158,7 +197,7 @@ l ++* r = Odd [l,r]
 
 -- | Infix operator implication.
 (->*)  :: Formula v -> Formula v -> Formula v
-a  ->* b = Not a ||* b
+a ->* b = Not a ||* b
 
 -- | Infix operator equivalence.
 (<->*) :: Formula v -> Formula v -> Formula v
@@ -183,52 +222,56 @@ infixr 1 <->*
    3. @g@ is 'Yes' or 'No' or does not contain any 'Yes' and 'No'.
    4. If @All l@ is a node in @g@, then @l@ contains at least 2 elements.
    5. If @All l@ is a node in @g@, then @l@ does not contain any 'All'.
-   6. 4 and 5 also hold for 'Some' and 'Odd'.
+   6. 4 and 5 also hold for 'Any' and 'Odd'.
    7. @size(g)@ and the runtime of 'simplifyFormula' are in @O(size(f))@.
 -}
-simplifyFormula :: forall v. (Eq v) => Formula v -> Formula (Lit v)
+simplifyFormula :: forall l. (Literal l) => Formula (Variable l) -> Formula l
 simplifyFormula f = rFormula f True
     where
-        rFormula :: Formula v -> Bool -> Formula (Lit v)
-        rFormula Yes  b      = bFormula Yes b
-        rFormula No  b       = bFormula No b
-        rFormula (All  []) b = bFormula Yes b
-        rFormula (Some []) b = bFormula No b
-        rFormula (Odd  []) b = bFormula No b
-        rFormula (Var  x)  b = Var $ lit b x
-        rFormula (Not  x)  b = rFormula x $ not b
-        rFormula (Odd  l) False = rFormula (Odd (Yes:l)) True
-        rFormula (Odd  l) _ = case innerForms of 
+        rFormula :: Formula (Variable l) -> Bool -> Formula l
+        rFormula Yes b         = bFormula Yes b
+        rFormula No  b         = bFormula No  b
+        rFormula (All []) b    = bFormula Yes b
+        rFormula (Any []) b    = bFormula No  b
+        rFormula (Odd []) b    = bFormula No  b
+        rFormula (Var x)  b    = Var $ lit b x
+        rFormula (Not x)  b    = rFormula x $ not b
+        rFormula (Odd l) False = rFormula (Odd (Yes:l)) True
+        rFormula (Odd l) _     = case innerForms of 
             []  -> bFormula Yes signed
             [_] -> head innerForms'
             _   -> flatten (Odd innerForms') True
             where
-                (yesses, innerForms) = partition (==Yes) $ filter (/=No) $ map simplifyFormula l
+                (yesses, innerForms) = partition isYes $ filter (not . isNo) $ map simplifyFormula l
                 signed = odd $ length yesses
                 firstNegated = fmap join $ simplifyFormula $ Not $ head innerForms
             --    firstNegated = head' $ filter (`notElem` [Yes, No]) $ simplifyFormula . Not <$> l
             --    head' = fst . fromMaybe (error "MERKWÜRDIG") . uncons
-                innerForms'
-                    | signed    = firstNegated : tail innerForms
-                    | otherwise = innerForms
+                innerForms' = undefined
+         --           | signed    = firstNegated : tail innerForms
+         --           | otherwise = innerForms
         rFormula f b
-            | killer `elem` innerLists = killer
-            | otherwise                = case innerLists of
+            | any isKiller l = killer
+            | otherwise   = case innerLists of
                 []  -> rFormula ([] <<$ f) b
                 [x] -> x
-                _   -> res
+                _   -> flatten (innerLists <<$ f) b
             where
                 l = innerFormulas f
-                innerLists = filter (/=neutral) $ map (`rFormula` b) l
-                res = flatten (innerLists <<$ f) b
-                neutral  = simplifyFormula $ [] <<$ res      -- 'Yes' in case of f = All [..]. 
-                                                           -- 'No' in case of 'Some'
-                killer   = simplifyFormula $ Not $ [] <<$ res -- opposite of neutral
+                innerLists = filter (not . isNeutral) $ map (`rFormula` b) l
+                (isNeutral, isKiller, killer) = case f of
+                    (All _) -> (isYes, isNo, No)
+                    (Any _) -> (isNo, isYes, Yes)
+    --                (Odd _) -> (isNo, const False, undefined)
+
+    --            neutral  = simplifyFormula $ [] <<$ res      -- 'Yes' in case of f = All [..]. 
+                                                             -- 'No' in case of 'Any'
+    --            killer   = simplifyFormula $ Not $ [] <<$ res -- opposite of neutral
 
         (<<$) :: [Formula w] -> Formula u -> Formula w
-        x <<$ (All  _) = All x
-        x <<$ (Some _) = Some x
-        x <<$ (Odd  _) = Odd x
+        x <<$ (All _) = All x
+        x <<$ (Any _) = Any x
+        x <<$ (Odd _) = Odd x
 
         flatten :: Formula w -> Bool -> Formula w
         flatten outer b = newL <<$ x
@@ -236,17 +279,17 @@ simplifyFormula f = rFormula f True
                 newL = others ++ concatMap innerFormulas sames
                 (sames, others) = partition (same x) $ innerFormulas outer
                 x = bFormula outer b
-                same (All _)  (All _)  = True
-                same (Some _) (Some _) = True
-                same (Odd _)  (Odd _)  = True
-                same _        _        = False
+                same (All _) (All _) = True
+                same (Any _) (Any _) = True
+                same (Odd _) (Odd _) = True
+                same _       _       = False
         
         bFormula :: Formula w -> Bool -> Formula w
-        bFormula Yes False = No
-        bFormula No  False = Yes
-        bFormula (All  l) False = Some l
-        bFormula (Some l) False = All l
-        bFormula x        True  = x
+        bFormula Yes     False = No
+        bFormula No      False = Yes
+        bFormula (All l) False = Any l
+        bFormula (Any l) False = All l
+        bFormula x       True  = x
 
 -- | Used in 'formulaToXSAT'.
 type Parser v b a = State (Int, XSATLit (Var v) b) a
@@ -268,7 +311,7 @@ formulaToXSAT f i = case f' of
         transCnf :: Formula (Lit v) -> Parser v b (XSATLit (Var v) b)
         transCnf (Var v) = return $ XSATLit [[Right <$> v]] []
         transCnf (All l) = foldl1 combineXSATLit <$> mapM transCnf l
-        transCnf (Some l) = do
+        transCnf (Any l) = do
             helpers <- mapM transLit l
             return $ XSATLit [helpers] []
         transCnf (Odd l) = do

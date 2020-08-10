@@ -222,7 +222,7 @@ gaussElemination :: forall v. Ord v => [Lit [v]] -> [([v], Bool)]
 gaussElemination l = gaussElemination' $ map sorted l
     where
         sorted :: Lit [v] -> ([v], Bool)
-        sorted l = (oddTimes (extract l), isPositive l)
+        sorted l = (oddTimes (unsign l), isPositive l)
         gaussElemination' :: [([v], Bool)] -> [([v], Bool)]
         gaussElemination' l
             | null l'   = []

@@ -41,7 +41,7 @@ import Control.Applicative (liftA2)
 
 import Foreign.C.Types (CInt)
 
-import SAT.IPASIR.Literals (Lit, flatLit, extract)
+import SAT.IPASIR.Literals (Lit, unsign, flatLit)
 import SAT.IPASIR.LBool (LBool(..), enumToLBool)
 import SAT.IPASIR.ComplexityProblem as Export
 
@@ -72,7 +72,7 @@ instance (Enum e, Ix e, Ord v) => Reduction (VarsReduction v e b) where
     newReduction = VarsReduction []
     parseEncoding (VarsReduction l) (SATLit enc) = (enc', VarsReduction l')
         where
-            vars    = Set.fromList $ map extract $ concat enc
+            vars    = Set.fromList $ map unsign $ concat enc
             newVars = vars \\ Set.unions l
             enc'    = SAT $ (map . map) (toEnum . flatLit . fmap (parseLit 1 l')) enc
             l'
