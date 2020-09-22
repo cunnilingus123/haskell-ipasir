@@ -61,7 +61,7 @@ import Data.Either (isRight)
 import Control.Monad (ap, join)
 import Control.Monad.Trans.State.Lazy (State, get, modify, runState)
 
-import SAT.IPASIR.Literals (Literal(Variable, isPositive, unsign), Lit(..), lit, neg)
+import SAT.IPASIR.Literals (Literal(Variable, HelperVariable, isPositive, unsign), Lit(..), lit, neg)
 import SAT.IPASIR.LBool (LBool(..), lnot, land, lor, lxor)
 import SAT.IPASIR.XSAT (XSATLit(..), combineXSATLit, xlitsToClause)
 import SAT.IPASIR.ComplexityProblem
@@ -264,10 +264,6 @@ simplifyFormula f = rFormula f True
                     (Any _) -> (isNo, isYes, Yes)
     --                (Odd _) -> (isNo, const False, undefined)
 
-    --            neutral  = simplifyFormula $ [] <<$ res      -- 'Yes' in case of f = All [..]. 
-                                                             -- 'No' in case of 'Any'
-    --            killer   = simplifyFormula $ Not $ [] <<$ res -- opposite of neutral
-
         (<<$) :: [Formula w] -> Formula u -> Formula w
         x <<$ (All _) = All x
         x <<$ (Any _) = Any x
@@ -299,7 +295,7 @@ type Parser v b a = State (Int, XSATLit (Var v) b) a
 --   The helper starts from @Left i@, where @i@ is the second argument.
 --   The first component of the resulting tuple is the successor of 
 --   the highest used helper variable (or @i@ if no helper were used).
-formulaToXSAT :: (Eq v) => Formula v -> Int -> (Int, XSATLit (Var v) b)
+formulaToXSAT :: (Literal l) => Formula (Variable l) -> Int -> (Int, XSATLit (HelperVariable l) b)
 formulaToXSAT f i = case f' of
     Yes -> (i, XSATLit [  ]  [])
     No  -> (i, XSATLit [[]] [])
