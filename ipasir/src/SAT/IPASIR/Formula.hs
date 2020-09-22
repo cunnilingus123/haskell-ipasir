@@ -61,7 +61,7 @@ import Data.Either (isRight)
 import Control.Monad (ap, join)
 import Control.Monad.Trans.State.Lazy (State, get, modify, runState)
 
-import SAT.IPASIR.Literals (Literal(Variable), Lit(..), lit, neg)
+import SAT.IPASIR.Literals (Literal(Variable, isPositive, unsign), Lit(..), lit, neg)
 import SAT.IPASIR.LBool (LBool(..), lnot, land, lor, lxor)
 import SAT.IPASIR.XSAT (XSATLit(..), combineXSATLit, xlitsToClause)
 import SAT.IPASIR.ComplexityProblem
@@ -242,14 +242,14 @@ simplifyFormula f = rFormula f True
             [_] -> head innerForms'
             _   -> flatten (Odd innerForms') True
             where
-                (yesses, innerForms) = partition isYes $ filter (not . isNo) $ map simplifyFormula l
+                (yesses, innerForms) = partition isYes $ filter (not . isNo) $ map simplifyFormula l :: ([Formula l], [Formula l])
                 signed = odd $ length yesses
-                firstNegated = fmap join $ simplifyFormula $ Not $ head innerForms
+                firstNegated = simplifyFormula $ Not $ join $ fmap unLit $ head innerForms
             --    firstNegated = head' $ filter (`notElem` [Yes, No]) $ simplifyFormula . Not <$> l
             --    head' = fst . fromMaybe (error "MERKWÜRDIG") . uncons
-                innerForms' = undefined
-         --           | signed    = firstNegated : tail innerForms
-         --           | otherwise = innerForms
+                innerForms'
+                    | signed    = firstNegated : tail innerForms
+                    | otherwise = innerForms
         rFormula f b
             | any isKiller l = killer
             | otherwise   = case innerLists of
@@ -360,6 +360,7 @@ formulaToXSAT f i = case f' of
         addXSAT :: XSATLit (Var v) b -> Parser v b ()
         addXSAT = modify . second . combineXSATLit
 
-unLit :: Lit a -> Formula a
-unLit (Pos x) = Var x
-unLit (Neg x) = Not $ Var x
+unLit :: Literal l => l -> Formula (Variable l)
+unLit l
+    | isPositive l = Var $ unsign l
+    | otherwise    = Not $ Var $ unsign l
