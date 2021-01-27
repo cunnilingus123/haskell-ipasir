@@ -1,9 +1,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -61,7 +58,7 @@ instance Show l => Show (ReducedFormula l) where
 instance Show l => Show (RFormula a l) where
     show f = show $ toPrinter f
         where
-            toPrinter :: Show l => (RFormula x l) -> Printer
+            toPrinter :: Show l => RFormula x l -> Printer
             toPrinter (RLit l) = Terminal $ show l
             toPrinter (RAll l) = Roundup "ALL" $ map (\(Bla x) -> toPrinter x) $ toList l
             toPrinter (RAny l) = Roundup "ANY" $ map (\(Bla x) -> toPrinter x) $ toList l
@@ -72,14 +69,14 @@ instance Show l => Show (Bla a l) where
 
 instance (Read l) => Read (ReducedFormula l) where
     readsPrec i str
-        | isPrefixOf "YES" str = [(RYes, drop 3 str)]
-        | isPrefixOf "NO"  str = [(RNo,  drop 2 str)]
+        | "YES" `isPrefixOf` str = [(RYes, drop 3 str)]
+        | "NO"  `isPrefixOf` str = [(RNo,  drop 2 str)]
         | otherwise            = do
             (printer,r) <- readsPrec i str
             let f = case printer of
                     (Terminal s)  -> ReducedFormula $ Bla $ parseOther printer
                     (Roundup s l) -> case s of
-                        "Odd" -> ReducedFormula $ Bla $ parseOdd printer
+                        "ODD" -> ReducedFormula $ Bla $ parseOdd printer
                         "ALL" -> ReducedFormula $ Bla $ parseAll printer
                         "ANY" -> ReducedFormula $ Bla $ parseAny printer
             return (f,r)

@@ -1,9 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
--- {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module SAT.IPASIR.Literals
     ( Literal (..)
@@ -13,13 +11,10 @@ module SAT.IPASIR.Literals
     ) where
 
 import Data.String (IsString(..))
-import Data.Bits (xor)
 import Data.Bifunctor (first)
-import Foreign.C.Types (CInt(..),CUInt(..))
-import Unsafe.Coerce (unsafeCoerce)
 import Data.Proxy (Proxy)
 
-import Control.Monad (Monad(..), ap)
+import Control.Monad (ap)
 
 -- | > isPositive . neg = not . isPositive
 --   > isPositive (setSign b lit) = b
@@ -53,8 +48,7 @@ instance Literal (Lit a) where
     lit False = Neg
     createHelperPool _ _ = map Left [0..]
 
-{-
-instance (Enum a) => Literal (ByNumber a) where
+instance (Enum a, Num a, Ord a) => Literal (ByNumber a) where
     type Variable (ByNumber a) = ByNumber a
     type HelperVariable (ByNumber a) = ByNumber a
     neg = fmap negate
@@ -66,11 +60,9 @@ instance (Enum a) => Literal (ByNumber a) where
         | isPositive x = setSign b x
         | otherwise = error "Not a valid variable name."
     createHelperPool _ m = [succ m..]
--}
-    
 
 newtype ByNumber a = ByNumber a
-    deriving (Eq, Ord, Show, Functor)
+    deriving (Eq, Ord, Show, Functor, Enum)
 
 -- | A literal is a positive or negative atom.
 data Lit a = Neg a | Pos a
@@ -107,13 +99,6 @@ flatLit (Pos i) = i
 flatLit (Neg i) = -i
 
 
-
-
-
-
-
-
-
 {-
 instance Literal Int Word where
     neg = negate
@@ -141,5 +126,5 @@ instance Literal CInt CUInt where
         | b = posL
         | otherwise = negate posL
         where
-            posL = unsafeCoerce v
+           posL = unsafeCoerce v
 -}

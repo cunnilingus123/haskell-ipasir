@@ -212,7 +212,7 @@ fullXSATLitToSatLit (XSATLit cnf xnf) = SATLit $ cnf'' ++ cnf'
 fullXClauseToSAT :: ([v], Bool) -> [[Lit v]]
 fullXClauseToSAT ([x], True)  = [[Pos x]]
 fullXClauseToSAT ([x], False) = [[Neg x]]
-fullXClauseToSAT ((x:xs), b) = negativeWay ++ positiveWay
+fullXClauseToSAT (x:xs, b) = negativeWay ++ positiveWay
     where
         negativeWay = (Neg x :) <$> fullXClauseToSAT (xs, b)
         positiveWay = (Pos x :) <$> fullXClauseToSAT (xs, not b)

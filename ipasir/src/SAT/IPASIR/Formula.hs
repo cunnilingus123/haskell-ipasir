@@ -1,8 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -61,10 +59,10 @@ import Data.Either (isRight)
 import Control.Monad (ap, join)
 import Control.Monad.Trans.State.Lazy (State, get, modify, runState)
 
-import SAT.IPASIR.Literals (Literal(Variable, HelperVariable, isPositive, unsign), Lit(..), lit, neg)
+import SAT.IPASIR.Literals -- (Literal(Variable, HelperVariable, isPositive, unsign), Lit(..), lit, neg)
 import SAT.IPASIR.LBool (LBool(..), lnot, land, lor, lxor)
 import SAT.IPASIR.XSAT (XSATLit(..), combineXSATLit, xlitsToClause)
-import SAT.IPASIR.ComplexityProblem
+import SAT.IPASIR.ComplexityProblem ( AReduction(..), Reduction(..), NPProblem(..), AssumingProblem(..), ComplexityProblem(..) )
 import SAT.IPASIR.Printing (Printer(..))
 
 newtype CSATLit v b = CSATLit (Formula v)
@@ -244,7 +242,7 @@ simplifyFormula f = rFormula f True
             where
                 (yesses, innerForms) = partition isYes $ filter (not . isNo) $ map simplifyFormula l :: ([Formula l], [Formula l])
                 signed = odd $ length yesses
-                firstNegated = simplifyFormula $ Not $ join $ fmap unLit $ head innerForms
+                firstNegated = simplifyFormula $ Not $ unLit =<< head innerForms
             --    firstNegated = head' $ filter (`notElem` [Yes, No]) $ simplifyFormula . Not <$> l
             --    head' = fst . fromMaybe (error "MERKWÜRDIG") . uncons
                 innerForms'
@@ -295,7 +293,7 @@ type Parser v b a = State (Int, XSATLit (Var v) b) a
 --   The helper starts from @Left i@, where @i@ is the second argument.
 --   The first component of the resulting tuple is the successor of 
 --   the highest used helper variable (or @i@ if no helper were used).
-formulaToXSAT :: (Literal l) => Formula (Variable l) -> Int -> (Int, XSATLit (HelperVariable l) b)
+--formulaToXSAT :: (Literal l) => Formula (Variable l) -> Int -> (Int, XSATLit (HelperVariable l) b)
 formulaToXSAT f i = case f' of
     Yes -> (i, XSATLit [  ]  [])
     No  -> (i, XSATLit [[]] [])

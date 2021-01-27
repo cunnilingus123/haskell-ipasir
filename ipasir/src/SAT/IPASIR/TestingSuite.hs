@@ -179,7 +179,7 @@ genProgram (RefiedArbitrary encoding assumption completer n restr) = do
         rest <- mapM parseCommand xs
         let c = AddEncoding $ completer $ mapMaybe toEncoding past
         return $ reverse past ++ c : rest
-    parser (x:xs) past = parser xs =<< (:past) <$> parseCommand x
+    parser (x:xs) past = parser xs . (:past) =<< parseCommand x
     parser _      past = pure $ reverse past
     toEncoding :: Command enc ass -> Maybe enc
     toEncoding (AddEncoding e) = Just e

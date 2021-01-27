@@ -13,6 +13,13 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (runStateT, StateT(..), evalStateT, get, modify, put)
 
 import SAT.IPASIR.ComplexityProblem
+    ( AReduction(..),
+      Reduction(..),
+      Solutiontransform(negSolutionToEncoding),
+      type (👉)(..),
+      Result,
+      AssumingProblem(..),
+      ComplexityProblem(..) )
 
 class (ComplexityProblem (CPS s)) => Solver s where
     -- | The 'ComplexityProblem' this solver can solve.
@@ -27,7 +34,7 @@ class (ComplexityProblem (CPS s)) => Solver s where
 
 type SolverMonad s a =  StateT s (MonadIS s) a
 
-interleaveSolverMonad :: IncrementalSolver s => Proxy s 
+interleaveSolverMonad :: IncrementalSolver s => Proxy s
                                              -> SolverMonad s a
                                              -> SolverMonad s a
 interleaveSolverMonad p sm = StateT $ interleaveMonad p . runStateT sm
@@ -123,4 +130,4 @@ liftReduction f = do
     return res
 
 liftSolverMonad :: IncrementalSolver s => (s -> MonadIS s a) -> SolverMonad s a
-liftSolverMonad f = lift =<< f <$> get
+liftSolverMonad f = lift . f =<< get

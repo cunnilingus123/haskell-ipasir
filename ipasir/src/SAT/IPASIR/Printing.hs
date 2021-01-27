@@ -2,7 +2,6 @@ module SAT.IPASIR.Printing where
 
 import Data.List (intercalate)
 import Data.Bifunctor (first)
-import Data.Char (isSpace)
 
 tabsize :: Int
 tabsize = 4
@@ -21,19 +20,16 @@ instance Show Printer where
                              ++ "\n]"
         | otherwise        = s ++ " " ++ show l
         where
-            innerStrings = tabdeeper . show <$> l
+            innerStrings = fmap tabdeeper . show =<< l
             tab          = replicate tabsize ' '
             symboltab x  = x : tail tab
             isRoundup :: Printer -> Bool
             isRoundup (Terminal _) = False
             isRoundup (Negation p) = isRoundup p
             isRoundup _            = True
-            tabdeeper :: String -> String
-            tabdeeper s = do
-                x <- s
-                if x == '\n'
-                    then '\n' : tab
-                    else [x]
+            tabdeeper :: Char -> String
+            tabdeeper '\n' = '\n' : tab
+            tabdeeper c    = pure c
 
 instance Read Printer where
     readsPrec i str = do

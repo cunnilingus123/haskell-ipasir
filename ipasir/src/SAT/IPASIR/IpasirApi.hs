@@ -9,6 +9,12 @@ import Control.Monad (forM_)
 import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
 
 import SAT.IPASIR.Solver
+    ( AssumingSolver(..)
+    , IncrementalSolver(..)
+    , Solver(CPS, solution)
+    , incrementalSolution
+    , liftSolverMonad
+    )
 import SAT.IPASIR.SAT (LBool(..), enumToLBool, SAT(..))
 
 type IDType = Word
