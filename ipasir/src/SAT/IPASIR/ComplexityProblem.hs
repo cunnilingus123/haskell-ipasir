@@ -4,11 +4,13 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module SAT.IPASIR.ComplexityProblem where
 
 import Data.Proxy (Proxy(..))
 import Data.Bifunctor (Bifunctor(..))
+import Data.Bifoldable
 import Data.Array (Array, assocs, bounds, ixmap, (!))
 import Data.Ix (Ix(..))
 import Foreign.C.Types (CInt)
@@ -16,6 +18,9 @@ import Foreign.C.Types (CInt)
 import Control.Monad ((<=<))
 
 import SAT.IPASIR.LBool (LBool(..))
+import SAT.IPASIR.Literals (ByNumber(..), Literal(Variable, makeVarCache, unsign, arrayIntoAllocation, Allocation), litToIntegral, integralToLit)
+import SAT.IPASIR.VarCache
+import Data.Maybe (fromJust, maybeToList)
 
 class ComplexityProblem cp where
     type Solution cp
@@ -99,14 +104,12 @@ data RedLBoolTrue (cp :: * -> *) = RedLBoolTrue
 --   In case of an 'LUndef' goes to False.
 data RedLBoolFalse (cp :: * -> *) = RedLBoolFalse
 
--- | This reduction changes the Enum type from 'e' to 'i' by using 'toEnum . fromEnum' 
---   in case the complexity problem uses Enums to express the variables.
-data RedEnum (cp :: * -> * -> *) e i b = RedEnum
+newtype RedEnum (cp :: * -> * -> *) l e b = RedEnum (GeneralVarCache (Variable l))
 
 newtype BoolLBoolDerive  (cp :: * -> * -> *) x = BoolLBoolDerive  (RedBoolLBool (cp x))
 newtype LBoolTrueDerive  (cp :: * -> * -> *) x = LBoolTrueDerive  (RedLBoolTrue (cp x))
 newtype LBoolFalseDerive (cp :: * -> * -> *) x = LBoolFalseDerive (RedLBoolFalse (cp x))
-newtype EnumDerive (cp :: * -> * -> *) e i b   = EnumDerive (RedEnum cp e i b)
+newtype EnumDerive (cp :: * -> * -> *) l e b   = EnumDerive (RedEnum cp l e b)
 
 instance ( ComplexityProblem (cp x LBool)
          , ComplexityProblem (cp x Bool)
@@ -179,45 +182,41 @@ instance ( Reduction (LBoolFalseDerive cp x)
     parseConflict   _ = id
     parseAssumption _ = pure
 
-instance ( ComplexityProblem (cp e b)
-         , ComplexityProblem (cp i b)
+instance ( ComplexityProblem (cp l b)
+         , ComplexityProblem (cp (ByNumber e) b)
+         , Literal l
+         , Literal (ByNumber e)
+         , Integral e
+         , Ix e
+         , Bifoldable cp
          , Bifunctor cp
-         , Enum e
-         , Ix e 
-         , Enum i
-         , Ix i
-         , Array e b ~ Solution (cp e b)
-         , Array i b ~ Solution (cp i b)
-         ) => Reduction (EnumDerive cp e i b) where
-    type CPFrom (EnumDerive cp e i b) = cp e b
-    type CPTo   (EnumDerive cp e i b) = cp i b
-    newReduction    = EnumDerive RedEnum
-    parseEncoding _ = (, EnumDerive RedEnum) . first (toEnum . fromEnum) 
-    parseSolution _ = mapIndex parseEnum
+         , Solution (cp l b) ~ Allocation l b
+         , Solution (cp (ByNumber e) b) ~ Array e b
+         ) => Reduction (EnumDerive cp l e b) where
+    
+    type CPFrom (EnumDerive cp l e b) = cp l b
+    type CPTo   (EnumDerive cp l e b) = cp (ByNumber e) b
+    newReduction  = EnumDerive $ RedEnum $ makeVarCache (Proxy :: Proxy l)
+    parseEncoding (EnumDerive (RedEnum cache)) enc = (newEnc, EnumDerive (RedEnum newCache))
         where
-            parseEnum :: (Enum a, Enum b) => a -> b
-            parseEnum = toEnum . fromEnum
-            mapIndex :: (Ix e, Enum e, Ix i, Enum i) => (e -> i) -> Array i a -> Array e a
-            mapIndex f arr = ixmap (bimap parseEnum parseEnum (bounds arr)) f arr
+            vars     = bifoldl (\xs x -> unsign x : xs) (error "This function shouldn't be used (ComplexityProblem.hs)") [] enc
+            newCache = addVarsToCache vars cache
+            newEnc   = first (fromJust . litToIntegral newCache) enc
+    parseSolution (EnumDerive (RedEnum cache)) = arrayIntoAllocation (Proxy :: Proxy l) cache
 
-
-instance ( AssumingProblem (cp e b)
-         , AssumingProblem (cp i b)
-         , Bifunctor cp
-         , Enum e
-         , Ix e 
-         , Enum i
-         , Ix i
-         , Array e b ~ Solution (cp e b)
-         , Array i b ~ Solution (cp i b)
-         , f e ~ Conflict (cp e b)
-         , f i ~ Conflict (cp i b)
+instance ( Reduction (EnumDerive cp l e b)
+         , AssumingProblem (cp l b)
+         , AssumingProblem (cp (ByNumber e) b)
+         , Literal l
+         , Integral e
+         , f (Variable l) ~ Conflict (cp l b)
+         , f (ByNumber e) ~ Conflict (cp (ByNumber e) b)
          , Functor f
-         , e ~ Assumption (cp e b)
-         , i ~ Assumption (cp i b)
-         ) => AReduction (EnumDerive cp e i b) where
-    parseConflict   _ = fmap (toEnum . fromEnum) 
-    parseAssumption _ = pure . toEnum . fromEnum
+         , l          ~ Assumption (cp l b)
+         , ByNumber e ~ Assumption (cp (ByNumber e) b)
+         ) => AReduction (EnumDerive cp l e b) where
+    parseConflict   (EnumDerive (RedEnum cache)) conflict = fmap (fromJust . integralToVar cache) conflict
+    parseAssumption (EnumDerive (RedEnum cache)) assump   = pure $ ByNumber $ fromJust $ litToIntegral cache assump
 
 instance Ix CInt where
     range (from, to) = [from..to]

@@ -39,14 +39,6 @@ data XSAT e b = XSAT [[e]] [[e]]
 satToXsat :: SAT e b -> XSAT e b
 satToXsat (SAT f) = XSAT f []
 
--- | Like the 'ComplexityProblem' 'SATLit', but with an additional gaussian system.
---   'Lit [v]' is a row in the gaussian system. 'Pos [ a,b,c ]' means
---   $$ a \\oplus b \\oplus c = 1 $$
---   and 'Neg [ a,b,c ]' means
---   $$ a \\oplus b \\oplus c = 0 $$
-data XSATLit v b = XSATLit [[Lit v]] [Lit [v]]
-    deriving (Show, Read)
-
 xlitsToClause :: [Lit v] -> Lit [v]
 xlitsToClause = xlitsToClause' False []
     where
@@ -56,28 +48,16 @@ xlitsToClause = xlitsToClause' False []
         xlitsToClause' b     l (Pos x: xs) = xlitsToClause'      b  (x:l) xs
         xlitsToClause' b     l (Neg x: xs) = xlitsToClause' (not b) (x:l) xs
 
-combineXSATLit :: XSATLit v b -> XSATLit v b -> XSATLit v b
-combineXSATLit (XSATLit cnf xnf) (XSATLit cnf' xnf') = XSATLit (cnf ++ cnf') (xnf ++ xnf')
+instance (Literal l) => ComplexityProblem (XSAT l b) where
+    type Solution (XSAT l b) = Array (Variable l) b
 
-satlitToXsatlit :: SATLit v b -> XSATLit v b
-satlitToXsatlit (SATLit f) = XSATLit f []
-
-data SatToXSatRed  sat = SatToXSatRed
-    deriving (Show)
-
-data XSatToSatRed xsat = XSatToSatRed
-    deriving (Show)
-
-instance (Enum e, Ix e) => ComplexityProblem (XSAT e b) where
-    type Solution (XSAT e b) = Array e b
-
-instance (Enum e, Ix e) => AssumingProblem (XSAT e b) where
-    type Conflict   (XSAT e b) = [e]
-    type Assumption (XSAT e b) = e
+instance (Literal l) => AssumingProblem (XSAT l b) where
+    type Conflict   (XSAT l b) = [l]
+    type Assumption (XSAT l b) = l
 
 instance Bifunctor XSAT where
     first  f (XSAT cnf xnf) = XSAT ((map . map) f cnf) ((map . map) f xnf)
-    second _ (XSAT cnf xnf) = XSAT cnf xnf
+    second _ (XSAT cnf xnf) = XSAT cnf xnf -- Just a typecast of the second argument
 
 instance Ord v => ComplexityProblem (XSATLit v b) where
     type Solution (XSATLit v b) = Map v b

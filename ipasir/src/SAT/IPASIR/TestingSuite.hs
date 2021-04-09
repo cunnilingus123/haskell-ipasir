@@ -82,7 +82,7 @@ checkSatSolution f t encoding solution = all checkC encoding
 checkSatResult :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
                  => b -> b -> [[e]] -> Result (SAT e b) -> Bool
 checkSatResult f t enc Nothing  = True
-checkSatResult f t enc (Just s) = checkSatSolution f t enc s
+checkSatResult f t enc (Just s) = checkSatSolution f t enc $ error "Should be 'checkSatSolution f t enc s', but this function doesnt work for different literal types right now" 
 
 checkSatEncsAssumpt :: forall e b. (ComplexityProblem (SAT e b), Num e, Ord e, Ix e, Eq b) 
                  => b -> b -> [[[e]]] -> [e] -> Result (SAT e b) -> Bool

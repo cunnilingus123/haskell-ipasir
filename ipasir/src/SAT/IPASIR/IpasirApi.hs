@@ -2,11 +2,12 @@
 
 module SAT.IPASIR.IpasirApi where
 
-import Data.Array (Array, listArray)
+import Data.Array (Array, listArray, bounds, ixmap)
 import Data.Ix (Ix(..))
 import Foreign.C.Types (CInt)
 import Control.Monad (forM_)
 import System.IO.Unsafe (unsafePerformIO, unsafeInterleaveIO)
+import Data.Bifunctor (Bifunctor(first, bimap))
 
 import SAT.IPASIR.Solver
     ( AssumingSolver(..)
@@ -16,6 +17,7 @@ import SAT.IPASIR.Solver
     , liftSolverMonad
     )
 import SAT.IPASIR.SAT (LBool(..), enumToLBool, SAT(..))
+import SAT.IPASIR.Literals (ByNumber(..))
 
 type IDType = Word
 type Var    = CInt
@@ -189,7 +191,7 @@ class (Ipasir a) => IpasirAssume a where
 newtype IpasirSolver i = IpasirSolver i
 
 -- | The complexity problem of an instance of Ipasir' is always 'CP.SAT' 'CInt' 'CP.LBool'
-type IpasirCP = SAT Var LBool
+type IpasirCP = SAT (ByNumber Var) LBool
 
 instance (Ipasir i) => Solver (IpasirSolver i) where
     type CPS (IpasirSolver i) = IpasirCP
@@ -198,7 +200,8 @@ instance (Ipasir i) => Solver (IpasirSolver i) where
 instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     type MonadIS (IpasirSolver i) = IO
     newIterativeSolver = IpasirSolver <$> ipasirInit
-    addEncoding (SAT e) = liftSolverMonad $ \(IpasirSolver ip) -> forM_ e $ ipasirAddClause ip
+    addEncoding sat = let SAT e = first (\(ByNumber x) -> x) sat
+                      in liftSolverMonad $ \(IpasirSolver ip) -> forM_ e $ ipasirAddClause ip
     solve = liftSolverMonad $ \(IpasirSolver ip) -> do
             b <- ipasirSolve ip
             case b of
@@ -211,9 +214,9 @@ instance (Ipasir i) => IncrementalSolver (IpasirSolver i) where
     interleaveMonad _ = unsafeInterleaveIO
 
 instance (IpasirAssume i) => AssumingSolver (IpasirSolver i) where
-    assume ass = liftSolverMonad $ \(IpasirSolver ip) -> ipasirAssume ip ass
+    assume (ByNumber ass) = liftSolverMonad $ \(IpasirSolver ip) -> ipasirAssume ip ass
     solveConflict = do
         sol <- solve
         case sol of
             Just s  -> pure $ Right s
-            Nothing -> liftSolverMonad $ \(IpasirSolver ip) -> Left <$> ipasirConflict ip
+            Nothing -> liftSolverMonad $ \(IpasirSolver ip) -> Left . map ByNumber <$> ipasirConflict ip
