@@ -46,6 +46,7 @@ import SAT.IPASIR.LBool (LBool(..), enumToLBool)
 import SAT.IPASIR.ComplexityProblem as Export
 import Data.Data (Proxy(Proxy))
 import Data.Bifoldable
+import SAT.IPASIR.Foldable (foldl2D, foldr2D)
 
 -- | A representative of the 
 --   [SAT-Problem](https://en.wikipedia.org/wiki/Boolean_satisfiability_problem)
@@ -88,8 +89,8 @@ instance Bifunctor SAT where
     bimap f _ (SAT cnf) = SAT $ (map . map) f cnf
 
 instance Bifoldable SAT where
-    bifoldl f _ s (SAT sat) = foldl f s $ concat sat
-    bifoldr f _ s (SAT sat) = foldr f s $ concat sat
+    bifoldl f _ s (SAT sat) = foldl2D f s sat
+    bifoldr f _ s (SAT sat) = foldr2D f s sat
 
 instance (Literal l) => ComplexityProblem (SAT l b) where
     type Solution (SAT l b) = Allocation l b

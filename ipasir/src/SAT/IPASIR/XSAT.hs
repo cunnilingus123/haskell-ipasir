@@ -31,10 +31,14 @@ import Data.Bits ((.|.), (.&.), bit, xor)
 
 import SAT.IPASIR.SAT
 import SAT.IPASIR.Literals
+import SAT.IPASIR.Foldable (foldl2D, foldr2D)
+import Data.Bifoldable (Bifoldable(..))
 
 -- | Like the 'ComplexityProblem' 'SAT', but with an additional gaussian system.
-data XSAT e b = XSAT [[e]] [[e]]
+data XSAT l b = XSAT [[l]] [[l]]
     deriving (Show, Read)
+
+data SatToXSatRed sat = SatToXSatRed
 
 satToXsat :: SAT e b -> XSAT e b
 satToXsat (SAT f) = XSAT f []
@@ -49,30 +53,23 @@ xlitsToClause = xlitsToClause' False []
         xlitsToClause' b     l (Neg x: xs) = xlitsToClause' (not b) (x:l) xs
 
 instance (Literal l) => ComplexityProblem (XSAT l b) where
-    type Solution (XSAT l b) = Array (Variable l) b
+    type Solution (XSAT l b) = Allocation l b
 
 instance (Literal l) => AssumingProblem (XSAT l b) where
-    type Conflict   (XSAT l b) = [l]
+    type Conflict   (XSAT l b) = [Variable l]
     type Assumption (XSAT l b) = l
 
 instance Bifunctor XSAT where
     first  f (XSAT cnf xnf) = XSAT ((map . map) f cnf) ((map . map) f xnf)
-    second _ (XSAT cnf xnf) = XSAT cnf xnf -- Just a typecast of the second argument
+    second _ (XSAT cnf xnf) = XSAT cnf xnf
 
-instance Ord v => ComplexityProblem (XSATLit v b) where
-    type Solution (XSATLit v b) = Map v b
+instance Bifoldable XSAT where
+    bifoldl f s (XSAT cnf xnf) = foldl2D f (foldl2D f s cnf) xnf
+    bifoldr f s (XSAT cnf xnf) = foldr2D f (foldr2D f s xnf) cnf
 
-instance Ord v => AssumingProblem (XSATLit v b) where
-    type Conflict   (XSATLit v b) = [v]
-    type Assumption (XSATLit v b) = Lit v
-
-instance Bifunctor XSATLit where
-    first  f (XSATLit cnf xnf) = XSATLit ((map . map . fmap) f cnf) ((map . fmap . map) f xnf)
-    second _ (XSATLit cnf xnf) = XSATLit cnf xnf
-
-instance (Enum e, Ix e) => Reduction (SatToXSatRed (SAT e b)) where
-    type CPFrom (SatToXSatRed (SAT e b)) =  SAT e b
-    type CPTo   (SatToXSatRed (SAT e b)) = XSAT e b
+instance (Literal l) => Reduction (SatToXSatRed (SAT l b)) where
+    type CPFrom (SatToXSatRed (SAT l b)) =  SAT l b
+    type CPTo   (SatToXSatRed (SAT l b)) = XSAT l b
     newReduction = SatToXSatRed
     parseEncoding _ sat = (satToXsat sat, SatToXSatRed)
     parseSolution _ = id
