@@ -30,7 +30,7 @@ import Control.Monad (ap)
 
 -- | > isPositive . neg = not . isPositive
 --   > isPositive (setSign b lit) = b
-class Functor (Allocation l) => Literal l where
+class (Functor (Allocation l), Ord (Variable l)) => Literal l where
     type Variable l
     type HelperVariable l
     type Allocation l :: * -> *

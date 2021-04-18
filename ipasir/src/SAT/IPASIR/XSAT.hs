@@ -45,15 +45,6 @@ data XSatToSatRed xsat = XSatToSatRed
 satToXsat :: SAT e b -> XSAT e b
 satToXsat (SAT f) = XSAT f []
 
-xlitsToClause :: [Lit v] -> Lit [v]
-xlitsToClause = xlitsToClause' False []
-    where
-        xlitsToClause' :: Bool -> [v] -> [Lit v] -> Lit [v]
-        xlitsToClause' False l [] = Pos l
-        xlitsToClause' _     l [] = Neg l
-        xlitsToClause' b     l (Pos x: xs) = xlitsToClause'      b  (x:l) xs
-        xlitsToClause' b     l (Neg x: xs) = xlitsToClause' (not b) (x:l) xs
-
 instance (Literal l) => ComplexityProblem (XSAT l b) where
     type Solution (XSAT l b) = Allocation l b
 
@@ -115,98 +106,45 @@ deriving via (EnumDerive XSAT l (ByNumber e) b)
 deriving via (EnumDerive XSAT l (ByNumber e) b)
     instance (Literal l, Literal (ByNumber e), Ix e, Integral e) => AReduction (RedEnum XSAT l (ByNumber e) b)
 
-
 fullXSATToSat :: Literal l => XSAT l b -> SAT l b
-fullXSATToSat = undefined
+fullXSATToSat (XSAT cnf xnf) = case gaussJordan $ map lineUp xnf of
+    Nothing -> SAT [[]]
+    Just xnf' -> SAT $ cnf ++ (fullXClauseToSAT =<< xnf')
 
-
-fullXSATLitToSatLit :: forall v b. Ord v => XSATLit v b -> SATLit v b
-fullXSATLitToSatLit (XSATLit cnf xnf) = SATLit $ cnf'' ++ cnf'
-    where
-        (xnf', trivials) = gaussJordan xnf
-        cnf' :: [[Lit v]]
-        cnf' = fullXClauseToSAT =<< xnf' ++ trivials
-
-        replacings :: [(Lit v, Lit v)]
-        replacings = h =<< trivials
-
-        cnf'' :: [[Lit v]]
-        cnf'' = foldl (\cnf r -> (map . map) (`replace` r) cnf) cnf replacings
-
-        replace :: Lit v -> (Lit v, Lit v) -> Lit v
-        replace lit (x,y)
-            | lit == x  = y
-            | otherwise = lit
-
-        h :: ([v],Bool) -> [(Lit v, Lit v)]
-        h ([x,y],False) = [(Neg x, Neg y),(Pos x, Pos y)]
-        h ([x,y],True ) = [(Neg x, Pos y),(Pos x, Neg y)]
-        h _ = []
-
-
-fullXClauseToSAT :: ([v], Bool) -> [[Lit v]]
-fullXClauseToSAT ([x], True)  = [[Pos x]]
-fullXClauseToSAT ([x], False) = [[Neg x]]
+fullXClauseToSAT :: forall l. Literal l => ([Variable l], Bool) -> [[l]]
+fullXClauseToSAT ([x], b)  = [[lit b x]]
 fullXClauseToSAT (x:xs, b) = negativeWay ++ positiveWay
     where
-        negativeWay = (Neg x :) <$> fullXClauseToSAT (xs, b)
-        positiveWay = (Pos x :) <$> fullXClauseToSAT (xs, not b)
+        negativeWay = (lit True  x :) <$> fullXClauseToSAT (xs, b)
+        positiveWay = (lit False x :) <$> fullXClauseToSAT (xs, not b)
 
--- | Gauss elimination
-gaussElemination :: forall v. Ord v => [Lit [v]] -> [([v], Bool)]
-gaussElemination l = gaussElemination' $ map sorted l
-    where
-        sorted :: Lit [v] -> ([v], Bool)
-        sorted l = (oddTimes (unsign l), isPositive l)
-        gaussElemination' :: [([v], Bool)] -> [([v], Bool)]
-        gaussElemination' l
-            | null l'   = []
-            | otherwise = m : gaussElemination' l''
-            where
-                l'  = filter filt l
-                l'' = symmetricDifferenceIf m <$> l'
-                m = minLine l'
-                filt :: ([v], Bool) -> Bool
-                filt ([],False) = False
-                filt ([],_)     = error "Not a solvable Gaussian system"
-                filt _          = True
+lineUp :: Literal l => [l] -> ([Variable l], Bool)
+lineUp l = (oddTimes $ map unsign l , foldl xor False $ map isPositive l)
 
+gaussJordan :: Ord v => [([v], Bool)] -> Maybe [([v], Bool)]
+gaussJordan l = jordan <$> gauss l
 
 jordan :: Ord v => [([v], Bool)] -> [([v], Bool)]
-jordan = jordan' . reverse
+jordan []     = []
+jordan (x:xs) = go x xs : jordan xs
     where
+        go :: Ord v => ([v], Bool) -> [([v], Bool)] -> ([v], Bool)
+        go x@(a:as,bool) gauss@(y@(b:bs,_):ys)
+            | a == b    = go (symmetricDifference x y) ys
+            | a <  b    = first (a:) $ go (as,bool) gauss
+            | otherwise = go x ys
 
-        jordan' :: Ord v => [([v], Bool)] -> [([v], Bool)]
-        jordan' = foldl (\res x -> line (x : res) : res ) []
-
-        line :: Ord v => [([v], Bool)] -> ([v], Bool)
-        line [x] = x
-        line (x@(v,b):y:xs) = first (lhs++) $ line (x':xs)
-            where
-                (lhs, rhs) = span (< head (fst y)) v
-                x' = symmetricDifferenceIf y (rhs, b)
-
-
-gaussJordan :: Ord v => [Lit [v]] -> ([([v], Bool)], [([v], Bool)] )
-gaussJordan sys = (sys'', trivials' ++ trivials'')
+gauss :: Ord v => [([v], Bool)] -> Maybe [([v], Bool)]
+gauss l
+    | any snd trivs = Nothing -- Not a solvable gaussian system
+    | null l'       = Just [] 
+    | otherwise     = (minL :) <$> gauss (has' ++ hasnt)
     where
-        (sys' , trivials' ) = minimizeSmallLines $ gaussElemination sys
-        (sys'', trivials'') = minimizeSmallLines $ jordan sys'
-
-
-minimizeSmallLines :: Ord v => [([v], Bool)] -> ([([v], Bool)], [([v], Bool)] )
-minimizeSmallLines l = case smallClause l Nothing of
-    Nothing -> (l, [])
-    Just x  -> second (x:) $ minimizeSmallLines 
-                           $ filter (not . null . fst) 
-                           $ map (symmetricDifferenceIf x) l
-    where
-        smallClause :: [([v], Bool)] -> Maybe ([v], Bool) -> Maybe ([v], Bool)
-        smallClause [] r = r
-        smallClause (x:xs) r = case x of
-            ([_]  ,_) -> Just x
-            ([_,_],_) -> smallClause xs (Just x)
-            _         -> smallClause xs r
+        (trivs,l')   = partition (null . fst) l 
+        minL         = minLine l'
+        minV         = head $ fst minL
+        (has, hasnt) = partition (hasElement minV) l'
+        has'         = symmetricDifference minL <$> tail has
 
 -- | Sorts the list and removes every element, with an even occurance in the list.
 --   the Result doesnt have dublicates.
@@ -223,24 +161,17 @@ oddTimes = oddTimes' . sort
 minLine :: Ord v => [([v],Bool)] -> ([v],Bool)
 minLine = minimumBy (compare `on` head . fst)
 
--- | Only works on ordered lists without doublicates.
---   The difference is only applied, iff the lowest element in
---   x constains in y. This makes it usefull for gauss jordan algorithm.
-symmetricDifferenceIf :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
-symmetricDifferenceIf x y
-    | b (fst y) = symmetricDifference x y
-    | otherwise = y
-    where
-        h = head $ fst x
-        b [] = False
-        b (y:ys) = case compare y h of
-            LT -> b ys
-            EQ -> True
-            _  -> False
+hasElement :: Ord v => v -> ([v], Bool) -> Bool
+hasElement x ([],_)    = False
+hasElement x (a:as,_)
+    | x <  a    = False
+    | x == a    = True
+    | otherwise = hasElement x (as,True)
 
 -- | Only works on ordered lists without doublicates. See 
 --   [Wikipedia: symmetric difference](https://en.wikipedia.org/wiki/Symmetric_difference) 
 --   for further information.
+--   
 symmetricDifference :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
 symmetricDifference (xs,xb) (ys,yb) = (symmetricDifference' xs ys, xor xb yb)
     where
@@ -250,147 +181,3 @@ symmetricDifference (xs,xb) (ys,yb) = (symmetricDifference' xs ys, xor xb yb)
             LT -> x : symmetricDifference' xs (y:ys)
             GT -> y : symmetricDifference' (x:xs) ys
             _  -> symmetricDifference' xs ys
-
-
-
-
-{-
-
-fullXSATToSat :: Enum e => XSAT e b -> SAT e b
-fullXSATToSat xsat = first (toEnum . flatLit) $ SAT cnf'
-    where
-        XSAT cnf xnf = first (parseEnum . fromEnum) xsat
-        parseEnum i
-            | i > 0 = Pos i
-            | i < 0 = Neg $ negate i
-        SATLit cnf' = fullXSATLitToSatLit $ XSATLit cnf $ map sequence xnf
-
-fullXSATLitToSatLit :: forall v b. Ord v => XSATLit v b -> SATLit v b
-fullXSATLitToSatLit (XSATLit cnf xnf) = SATLit $ cnf'' ++ cnf'
-    where
-        (xnf', trivials) = gaussJordan xnf
-        cnf' :: [[Lit v]]
-        cnf' = fullXClauseToSAT =<< xnf' ++ trivials
-
-        replacings :: [(Lit v, Lit v)]
-        replacings = h =<< trivials
-
-        cnf'' :: [[Lit v]]
-        cnf'' = foldl (\cnf r -> (map . map) (`replace` r) cnf) cnf replacings
-
-        replace :: Lit v -> (Lit v, Lit v) -> Lit v
-        replace lit (x,y)
-            | lit == x  = y
-            | otherwise = lit
-
-        h :: ([v],Bool) -> [(Lit v, Lit v)]
-        h ([x,y],False) = [(Neg x, Neg y),(Pos x, Pos y)]
-        h ([x,y],True ) = [(Neg x, Pos y),(Pos x, Neg y)]
-        h _ = []
-
-
-fullXClauseToSAT :: ([v], Bool) -> [[Lit v]]
-fullXClauseToSAT ([x], True)  = [[Pos x]]
-fullXClauseToSAT ([x], False) = [[Neg x]]
-fullXClauseToSAT (x:xs, b) = negativeWay ++ positiveWay
-    where
-        negativeWay = (Neg x :) <$> fullXClauseToSAT (xs, b)
-        positiveWay = (Pos x :) <$> fullXClauseToSAT (xs, not b)
-
--- | Gauss elimination
-gaussElemination :: forall v. Ord v => [Lit [v]] -> [([v], Bool)]
-gaussElemination l = gaussElemination' $ map sorted l
-    where
-        sorted :: Lit [v] -> ([v], Bool)
-        sorted l = (oddTimes (unsign l), isPositive l)
-        gaussElemination' :: [([v], Bool)] -> [([v], Bool)]
-        gaussElemination' l
-            | null l'   = []
-            | otherwise = m : gaussElemination' l''
-            where
-                l'  = filter filt l
-                l'' = symmetricDifferenceIf m <$> l'
-                m = minLine l'
-                filt :: ([v], Bool) -> Bool
-                filt ([],False) = False
-                filt ([],_)     = error "Not a solvable Gaussian system"
-                filt _          = True
-
-
-jordan :: Ord v => [([v], Bool)] -> [([v], Bool)]
-jordan = jordan' . reverse
-    where
-
-        jordan' :: Ord v => [([v], Bool)] -> [([v], Bool)]
-        jordan' = foldl (\res x -> line (x : res) : res ) []
-
-        line :: Ord v => [([v], Bool)] -> ([v], Bool)
-        line [x] = x
-        line (x@(v,b):y:xs) = first (lhs++) $ line (x':xs)
-            where
-                (lhs, rhs) = span (< head (fst y)) v
-                x' = symmetricDifferenceIf y (rhs, b)
-
-
-gaussJordan :: Ord v => [Lit [v]] -> ([([v], Bool)], [([v], Bool)] )
-gaussJordan sys = (sys'', trivials' ++ trivials'')
-    where
-        (sys' , trivials' ) = minimizeSmallLines $ gaussElemination sys
-        (sys'', trivials'') = minimizeSmallLines $ jordan sys'
-
-
-minimizeSmallLines :: Ord v => [([v], Bool)] -> ([([v], Bool)], [([v], Bool)] )
-minimizeSmallLines l = case smallClause l Nothing of
-    Nothing -> (l, [])
-    Just x  -> second (x:) $ minimizeSmallLines 
-                           $ filter (not . null . fst) 
-                           $ map (symmetricDifferenceIf x) l
-    where
-        smallClause :: [([v], Bool)] -> Maybe ([v], Bool) -> Maybe ([v], Bool)
-        smallClause [] r = r
-        smallClause (x:xs) r = case x of
-            ([_]  ,_) -> Just x
-            ([_,_],_) -> smallClause xs (Just x)
-            _         -> smallClause xs r
-
--- | Sorts the list and removes every element, with an even occurance in the list.
---   the Result doesnt have dublicates.
---   > oddTimes [3,1,2,1,2,1,6] == [1,3,6]
-oddTimes :: Ord v => [v] -> [v]
-oddTimes = oddTimes' . sort
-    where
-        oddTimes' []  = []
-        oddTimes' [x] = [x]
-        oddTimes' (x:y:xs)
-            | x == y    =     oddTimes' xs
-            | otherwise = x : oddTimes' (y:xs)
-
-minLine :: Ord v => [([v],Bool)] -> ([v],Bool)
-minLine = minimumBy (compare `on` head . fst)
-
--- | Only works on ordered lists without doublicates.
-symmetricDifferenceIf :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
-symmetricDifferenceIf x y
-    | b (fst y) = symmetricDifference x y
-    | otherwise = y
-    where
-        h = head $ fst x
-        b [] = False
-        b (y:ys) = case compare y h of
-            LT -> b ys
-            EQ -> True
-            _  -> False
-
--- | Only works on ordered lists without doublicates. See 
---   [Wikipedia: symmetric difference](https://en.wikipedia.org/wiki/Symmetric_difference) 
---   for further information.
-symmetricDifference :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
-symmetricDifference (xs,xb) (ys,yb) = (symmetricDifference' xs ys, xor xb yb)
-    where
-        symmetricDifference' [] ys = ys
-        symmetricDifference' xs [] = xs
-        symmetricDifference' (x:xs) (y:ys) = case compare x y of
-            LT -> x : symmetricDifference' xs (y:ys)
-            GT -> y : symmetricDifference' (x:xs) ys
-            _  -> symmetricDifference' xs ys
--}

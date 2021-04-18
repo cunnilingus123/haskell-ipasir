@@ -61,7 +61,6 @@ import Control.Monad.Trans.State.Lazy (State, get, modify, runState)
 
 import SAT.IPASIR.Literals -- (Literal(Variable, HelperVariable, isPositive, unsign), Lit(..), lit, neg)
 import SAT.IPASIR.LBool (LBool(..), lnot, land, lor, lxor)
-import SAT.IPASIR.XSAT (XSATLit(..), combineXSATLit, xlitsToClause)
 import SAT.IPASIR.ComplexityProblem ( AReduction(..), Reduction(..), NPProblem(..), AssumingProblem(..), ComplexityProblem(..) )
 import SAT.IPASIR.Printing (Printer(..))
 
