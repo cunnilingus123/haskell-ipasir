@@ -8,10 +8,9 @@
 
 module SAT.IPASIR.Literals
     ( Literal (..)
-    , Lit (..)
-    , ByNumber(..)
+    , Lit (Neg, Pos)
+    , ByNumber(ByNumber)
     , fromBool
-    , flatLit
     , integralToLit
     , litToIntegral
     , litSatisfied
@@ -140,6 +139,3 @@ instance Read a => Read (Lit a) where
 fromBool :: Bool -> Lit ()
 fromBool = (`lit` ())
 
-flatLit :: Num e => Lit e -> e
-flatLit (Pos i) = i
-flatLit (Neg i) = -i

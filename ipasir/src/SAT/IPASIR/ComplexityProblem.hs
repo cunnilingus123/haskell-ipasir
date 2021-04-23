@@ -6,20 +6,37 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module SAT.IPASIR.ComplexityProblem where
+module SAT.IPASIR.ComplexityProblem
+    ( ComplexityProblem (Solution)
+    , AssumingProblem (Assumption, Conflict)
+    , NPProblem (checkModel)
+    , Solutiontransform (..)
+    , type(👉) (..)
+    , Reduction (..)
+    , AReduction (..)
+    , RedBoolLBool (..)
+    , RedLBoolTrue (..)
+    , RedLBoolFalse (..)
+    , RedEnum (..)
+    , BoolLBoolDerive (..)
+    , LBoolTrueDerive (..)
+    , LBoolFalseDerive (..)
+    , EnumDerive (..)
+    ) where
 
 import Data.Proxy (Proxy(..))
 import Data.Bifunctor (Bifunctor(..))
-import Data.Bifoldable
+import Data.Bifoldable ( Bifoldable(bifoldl) )
 import Data.Array (Array, assocs, bounds, ixmap, (!))
 import Data.Ix (Ix(..))
+
 import Foreign.C.Types (CInt)
 
 import Control.Monad ((<=<))
 
 import SAT.IPASIR.LBool (LBool(..))
 import SAT.IPASIR.Literals (ByNumber(..), Literal(Variable, makeVarCache, unsign, arrayIntoAllocation, Allocation), litToIntegral, integralToLit)
-import SAT.IPASIR.VarCache
+import SAT.IPASIR.VarCache ( GeneralVarCache, VarCache(addVarsToCache, integralToVar) )
 import Data.Maybe (fromJust, maybeToList)
 
 class ComplexityProblem cp where
@@ -31,9 +48,6 @@ class (ComplexityProblem cp) => AssumingProblem cp where
 
 class (ComplexityProblem cp) => NPProblem cp where
     checkModel :: Solution cp -> cp -> Bool
-
--- | Every 'Solver' returns either a 'Solution' (also called model or proof).
-type Result cp = Maybe (Solution cp)
 
 -- | (👉) represents a new solver (or reduction) using a 'Reduction'.
 --   If the left side 'r' is a 'Reduction' and the right side 's' is a 

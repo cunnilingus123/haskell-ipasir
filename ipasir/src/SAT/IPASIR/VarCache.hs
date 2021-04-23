@@ -4,7 +4,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 
-module SAT.IPASIR.VarCache where
+module SAT.IPASIR.VarCache
+    ( VarCacheOrd (VarCacheOrd)
+    , VarCacheIntegral (VarCacheIntegral)
+    , GeneralVarCache (GeneralVarCache)
+    , VarCache 
+        ( addVarsToCache
+        , unsafeIntegralToVar
+        , integralToVar
+        , varToIntegral
+        , mapArrayOnMap
+        )
+    ) where
 
 import qualified Data.Vector as Vec
 import qualified Data.Array
@@ -107,4 +118,3 @@ instance VarCache GeneralVarCache a where
     integralToVar (GeneralVarCache c)       = integralToVar c
     varToIntegral (GeneralVarCache c)       = varToIntegral c
     mapArrayOnMap (GeneralVarCache c)       = mapArrayOnMap c
-

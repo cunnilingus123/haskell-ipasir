@@ -5,6 +5,7 @@
 
 module SAT.IPASIR.TestingSuite where
 
+{-
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 import Test.QuickCheck.Gen (Gen, elements, choose, vectorOf, listOf)
 import Test.QuickCheck (Property, generate)
@@ -206,3 +207,4 @@ genCommandBlock n restr = do
     resorting 
         | restr == MultiAssumptionBeforeSolve = sort
         | otherwise = id
+-}

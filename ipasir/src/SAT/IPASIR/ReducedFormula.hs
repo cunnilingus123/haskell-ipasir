@@ -10,7 +10,7 @@ module SAT.IPASIR.ReducedFormula where
 import GHC.TypeLits (TypeError (..), ErrorMessage (Text))
 import Data.Constraint (Constraint(..) )
 import Data.List.NonEmpty (NonEmpty(..), fromList, toList )
-import SAT.IPASIR.Printing
+import SAT.IPASIR.Printing ( Printer(Roundup, Terminal) )
 import Data.Bifunctor (first)
 import Data.List (isPrefixOf)
 

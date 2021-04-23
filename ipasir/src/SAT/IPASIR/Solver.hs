@@ -13,13 +13,13 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (runStateT, StateT(..), evalStateT, get, modify, put)
 
 import SAT.IPASIR.ComplexityProblem
-    ( AReduction(..),
-      Reduction(..),
-      Solutiontransform(negSolutionToEncoding),
-      type (👉)(..),
-      Result,
-      AssumingProblem(..),
-      ComplexityProblem(..) )
+    ( AReduction(..)
+    , Reduction(..)
+    , Solutiontransform(negSolutionToEncoding)
+    , type (👉)(..)
+    , AssumingProblem(..)
+    , ComplexityProblem(..)
+    )
 
 class (ComplexityProblem (CPS s)) => Solver s where
     -- | The 'ComplexityProblem' this solver can solve.
@@ -27,7 +27,7 @@ class (ComplexityProblem (CPS s)) => Solver s where
     -- | Calculates a model using the given solver. If the solver is an
     --  'IncrementalSolver', you can use the standard implementation:
     -- > solution = incrementalSolution
-    solution    :: Proxy s -> CPS s -> Result (CPS s)
+    solution    :: Proxy s -> CPS s -> Maybe (Solution (CPS s))
     -- | Same as checking if the result of 'solution' is a 'Solution'.
     satisfiable :: Proxy s -> CPS s -> Bool
     satisfiable s e = isJust $ solution s e
@@ -47,7 +47,7 @@ class (Monad (MonadIS s), Solver s) => IncrementalSolver s where
     -- | Adds contraints to the solver.
     addEncoding        :: CPS s -> SolverMonad s ()
     -- | Starts the solving process and gives back the result. See 'Result'.
-    solve              :: SolverMonad s (Result (CPS s))
+    solve              :: SolverMonad s (Maybe (Solution (CPS s)))
     -- | If the monad is "IO" you might want to implement this
     --   function by 'System.IO.Unsafe.unsafePerformIO' or 
     --   'System.IO.Unsafe.unsafeDupablePerformIO'.
@@ -66,7 +66,7 @@ class (IncrementalSolver s, AssumingProblem (CPS s)) => AssumingSolver s where
 -- | If you want to instantiate 'Solver' you can use this 
 --   function as a standard implementation for 'solution'.
 incrementalSolution :: forall s. IncrementalSolver s 
-                    => Proxy s -> CPS s -> Result (CPS s)
+                    => Proxy s -> CPS s -> Maybe (Solution (CPS s))
 incrementalSolution s encoding 
     = unwrapSolverMonad s $ addEncoding encoding >> solve
 
