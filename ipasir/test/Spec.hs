@@ -29,6 +29,7 @@ testTree = testGroup "Testing CP"
         ]
     ]
 
+{-
 instance Arbitrary (CSATLit Int b) where
     arbitrary = CSATLit <$> arbitrary
 
@@ -89,3 +90,5 @@ simplifyFormulaTests f   = go f
 
 checkFormula :: Map Int LBool -> Formula Int -> Bool
 checkFormula m f = checkModel m (CSATLit f :: CSATLit Int LBool)
+
+-}

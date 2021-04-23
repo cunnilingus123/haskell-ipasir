@@ -1,10 +1,11 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
-
 {-# LANGUAGE FlexibleContexts #-}
+
 module SAT.IPASIR.Literals
     ( Literal (..)
     , Lit (..)
@@ -13,26 +14,25 @@ module SAT.IPASIR.Literals
     , flatLit
     , integralToLit
     , litToIntegral
+    , litSatisfied
     ) where
 
 import SAT.IPASIR.VarCache
+import SAT.IPASIR.LBool (BoolLike(boolToBoolLike))
 
-import Data.String (IsString(..))
-import Data.Bifunctor (first, Bifunctor (bimap))
-import Data.Proxy (Proxy)
+import Data.Bifunctor (Bifunctor (bimap, first))
+import Data.Proxy (Proxy(Proxy))
 import Data.Ix (Ix, inRange)
+import Control.Monad (ap)
 
-import qualified Data.Set
 import qualified Data.Map
 import qualified Data.Array
-
-import Control.Monad (ap)
 
 -- | > isPositive . neg = not . isPositive
 --   > isPositive (setSign b lit) = b
 class (Functor (Allocation l), Ord (Variable l)) => Literal l where
     type Variable l
-    type HelperVariable l
+    type HelperLiteral l
     type Allocation l :: * -> *
 
     -- | Negates a literal.
@@ -45,8 +45,9 @@ class (Functor (Allocation l), Ord (Variable l)) => Literal l where
         | b == isPositive lit = lit
         | otherwise           = neg lit
     unsign :: l -> Variable l
+    -- | Gives a sign to a variable. 'True' stands for +.
     lit :: Bool -> Variable l -> l
-    createHelperPool :: Proxy l -> Variable l -> [HelperVariable l]
+    createHelperPool :: Proxy l -> Variable l -> [Variable (HelperLiteral l)]
     unsafeReadAllocation :: Proxy l -> Allocation l b -> Variable l -> b
     readAllocation :: Proxy l -> Allocation l b -> Variable l -> Maybe b
     assocs :: Proxy l -> Allocation l b -> [(Variable l,b)]
@@ -62,9 +63,14 @@ litToIntegral cache l
     | otherwise    = negate <$> i
     where i = varToIntegral cache (unsign l)
 
+litSatisfied :: forall l b . (Literal l, BoolLike b) => Allocation l b -> l -> Bool
+litSatisfied allo l = readAllocation (Proxy :: Proxy l) allo (unsign l) == sign' l
+    where
+        sign'          = Just . boolToBoolLike . isPositive
+
 instance Ord a => Literal (Lit a) where
     type Variable (Lit a) = a
-    type HelperVariable (Lit a) = Either Int a
+    type HelperLiteral (Lit a) = Lit (Either Int a)
     type Allocation (Lit a) = Data.Map.Map a
     neg (Pos x) = Neg x
     neg (Neg x) = Pos x
@@ -83,7 +89,7 @@ instance Ord a => Literal (Lit a) where
 
 instance (Enum a, Num a, Ord a, Ix a, Integral a) => Literal (ByNumber a) where
     type Variable (ByNumber a) = ByNumber a
-    type HelperVariable (ByNumber a) = ByNumber a
+    type HelperLiteral (ByNumber a) = ByNumber a
     type Allocation (ByNumber a) = Data.Array.Array a
     neg = fmap negate
     isPositive = (> ByNumber 0)
@@ -104,8 +110,8 @@ instance (Enum a, Num a, Ord a, Ix a, Integral a) => Literal (ByNumber a) where
         where b = bimap fromIntegral fromIntegral $ Data.Array.bounds arr
 
 newtype ByNumber a = ByNumber a
-    deriving (Eq, Ord, Show, Functor, Enum, Ix)
-    deriving newtype (Real, Num, Integral)
+    deriving (Eq, Ord, Functor, Enum, Ix)
+    deriving newtype (Show, Read, Real, Num, Integral)
 
 -- | A literal is a positive or negative atom.
 data Lit a = Neg a | Pos a
@@ -129,9 +135,6 @@ instance Read a => Read (Lit a) where
     readsPrec prec ('+':rest) = first Pos <$> readsPrec prec rest
     readsPrec prec ('-':rest) = first Neg <$> readsPrec prec rest
     readsPrec prec _          = []
-
-instance IsString a => IsString (Lit a) where
-    fromString = return . fromString
 
 -- | Create an Empty Literal with given sign. 
 fromBool :: Bool -> Lit ()

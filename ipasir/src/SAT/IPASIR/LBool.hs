@@ -1,11 +1,10 @@
 module SAT.IPASIR.LBool
     ( LBool (..)
-    , lnot
-    , land
-    , lor
-    , lxor
+    , BoolLike (..)
     , enumToLBool
     ) where
+
+import Data.Bits (xor)
 
 -- | A solution for a single variable.
 -- @Just a@ indicates that the variable is @a@ in the solution
@@ -16,36 +15,77 @@ module SAT.IPASIR.LBool
 -- deal with unimportant variables pass your solutions through @expandSolution@.
 data LBool = LFalse | LUndef | LTrue deriving (Eq,Ord,Bounded)
 
+-- | Summarizes @Bool@ and @LBool@.
+class Eq b => BoolLike b where
+    ltrue  :: b
+    lfalse :: b
+    lfalse = lnot ltrue
+    -- | Negation
+    lnot   :: b -> b
+    -- | Logical and.
+    (&&*) :: b -> b -> b
+    -- | Logical or.
+    (||*) :: b -> b -> b
+    -- | Logical exclusive or.
+    (++*) :: b -> b -> b
+    -- | Logical implication.
+    (->*)  :: b -> b -> b
+    x ->* y  = lnot x ||* y
+    -- | Logical equivalence.
+    (<->*) :: b -> b -> b
+    x <->* y = lnot $ x ++* y
+
+    land   :: Foldable t => t b -> b
+    land = foldl (&&*) ltrue
+    lor    :: Foldable t => t b -> b
+    lor  = foldl (||*) lfalse
+    lxor   :: Foldable t => t b -> b
+    lxor = foldl (++*) lfalse
+    boolToBoolLike :: Bool -> b
+    boolToBoolLike b = if b then ltrue else lfalse
+
+instance BoolLike LBool where
+    ltrue  = LTrue
+    lfalse = LFalse
+
+    lnot LTrue  = LFalse
+    lnot LFalse = LTrue
+    lnot LUndef = LUndef
+
+    LFalse &&* _      = LFalse
+    _      &&* LFalse = LFalse
+    LTrue  &&* LTrue  = LTrue
+    _      &&* _      = LUndef
+
+    LTrue  ||* _      = LTrue
+    _      ||* LTrue  = LTrue
+    LFalse ||* LFalse = LFalse
+    _      ||* _      = LUndef
+
+    LUndef ++* _      = LUndef
+    _      ++* LUndef = LUndef
+    LFalse ++* LFalse = LFalse
+    LTrue  ++* LTrue  = LFalse
+    _      ++* _      = LTrue
+
+
+instance BoolLike Bool where
+    ltrue  = True
+    lfalse = False
+    lnot   = not
+    (&&*)  = (&&)
+    (||*)  = (||)
+    (++*)  = (/=)
+    (<->*) = (==)
+    land   = and
+    lor    = or
+    boolToBoolLike = id
+
 enumToLBool :: (Ord a, Num a) => a -> LBool
 enumToLBool i = case compare i 0 of
     GT -> LTrue
     EQ -> LUndef
     _  -> LFalse
-
--- | Negates an 'lBool'.
-lnot :: LBool -> LBool
-lnot LTrue  = LFalse
-lnot LFalse = LTrue
-lnot LUndef = LUndef
-
-land :: LBool -> LBool -> LBool
-land LFalse _ = LFalse
-land _ LFalse = LFalse
-land LTrue LTrue = LTrue
-land _ _ = LUndef
-
-lor :: LBool -> LBool -> LBool
-lor LTrue _ = LTrue
-lor _ LTrue = LTrue
-lor LFalse LFalse = LFalse
-lor _ _ = LUndef
-
-lxor :: LBool -> LBool -> LBool
-lxor LUndef _ = LUndef
-lxor _ LUndef = LUndef
-lxor LFalse LFalse = LFalse
-lxor LTrue  LTrue  = LFalse
-lxor _  _          = LTrue
 
 instance Show LBool where
     show LTrue  = "1"

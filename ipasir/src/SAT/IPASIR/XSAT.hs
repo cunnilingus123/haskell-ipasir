@@ -5,36 +5,40 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{- |This module provides
+{- |This module provides the definition of 'XSAT' formulas and reductions from and to 'SAT' formulas. 
 
-        1. The definition of XSAT formulas. 
-        2. Variable based XSAT formulas
+    Definition of XSAT: Every propositional formula \\( \\varphi \\) of the form 
+    $$ \\varphi = \\text{xcnf} = \\text{cnf} \\wedge \\text{xnf} $$
+    where
+    $$ \\begin{align*}  
+         \\text{cnf} &= \\bigwedge_{i=1}^{n}  \\bigvee_{j=1}^{m_i}    (\\lnot) x_{i,j} \\\\ 
+         \\text{xnf} &= \\bigwedge_{i=1}^{n'} \\bigoplus_{j=1}^{m'_i} (\\lnot) x'_{i,j}
+       \\end{align*}
+    $$ 
+    \\( \\bigoplus \\) is the logical xor.
 
-    Definition of XCNF: Every propositional formula of the form 
-    $$ \\varphi = cnf \\wedge \\underbrace{\\bigwedge_{i=1}^{n} 
-       \\left( (\\lnot) \\bigoplus_{j=1}^{m_i} x_{i,j} \\right)}_{\\text{xnf}} $$
-    where \\( cnf \\) is a CNF and \\( \\oplus \\) is the exclusive or.
-    Note, that the xnf is a gaussian system.
-    We call a logical formula to be XSAT iff the encoding is in XCNF.
+    Note, that the cnf is a standard [SAT](https://en.wikipedia.org/wiki/Boolean_satisfiability_problem) formula and xnf is 
+    a [linear system](https://en.wikipedia.org/wiki/System_of_linear_equations) over the the [binary field](https://en.wikipedia.org/wiki/GF\(2\)) \\( GF(2) = (\\{0,1\\}, \\oplus, \\wedge) \\). 
 -}
 
-module SAT.IPASIR.XSAT where
+module SAT.IPASIR.XSAT 
+    ( XSAT(..)
+    , SatToXSatRed
+    , XSatToSatRed
+    ) where
 
-import Data.Map (Map)
 import Data.Ix (Ix)
-import Data.Array (Array)
 import Data.Function (on)
-import Data.Bifunctor (Bifunctor(..))
-import Data.Set (Set, fromList, toList, member, fromAscList)
-import Data.List (sort, minimumBy, partition)
-import Data.Bits ((.|.), (.&.), bit, xor)
+import Data.Bifunctor (Bifunctor(first, second))
+import Data.List (partition, sort, minimumBy)
 
-import SAT.IPASIR.SAT
-import SAT.IPASIR.Literals
+import SAT.IPASIR.SAT 
+import SAT.IPASIR.LBool (BoolLike(boolToBoolLike, (++*), lxor))
+import SAT.IPASIR.Literals (Literal(Allocation, Variable, lit, unsign, isPositive), ByNumber, litSatisfied)
 import SAT.IPASIR.Foldable (foldl2D, foldr2D)
-import Data.Bifoldable (Bifoldable(..))
+import Data.Bifoldable (Bifoldable(bifoldl, bifoldr))
 
--- | Like the 'ComplexityProblem' 'SAT', but with an additional gaussian system.
+-- | Like the 'ComplexityProblem' 'SAT', but with an additional system of linear equations.
 data XSAT l b = XSAT [[l]] [[l]]
     deriving (Show, Read)
 
@@ -47,6 +51,13 @@ satToXsat (SAT f) = XSAT f []
 
 instance (Literal l) => ComplexityProblem (XSAT l b) where
     type Solution (XSAT l b) = Allocation l b
+
+instance (Literal l, BoolLike b) => NPProblem (XSAT l b) where
+    checkModel sol (XSAT cnf xnf) = checkModel sol (SAT cnf) && all (lxor . map (litSatisfied sol)) xnf
+
+instance (Literal l, BoolLike b) => Solutiontransform (XSAT l b) where
+    solutionToEncoding    = satToXsat . solutionToEncoding 
+    negSolutionToEncoding = satToXsat . negSolutionToEncoding 
 
 instance (Literal l) => AssumingProblem (XSAT l b) where
     type Conflict   (XSAT l b) = [Variable l]
@@ -75,7 +86,7 @@ instance (Literal l) => Reduction (XSatToSatRed (XSAT l b)) where
     type CPFrom (XSatToSatRed (XSAT l b)) = XSAT l b
     type CPTo   (XSatToSatRed (XSAT l b)) =  SAT l b
     newReduction = XSatToSatRed
-    parseEncoding _ xsat = (fullXSATToSat xsat, XSatToSatRed)
+    parseEncoding _ xsat = (xsatToSat xsat, XSatToSatRed)
     parseSolution _ = id
 
 instance (Literal l) => AReduction (XSatToSatRed (XSAT l b)) where
@@ -106,8 +117,8 @@ deriving via (EnumDerive XSAT l (ByNumber e) b)
 deriving via (EnumDerive XSAT l (ByNumber e) b)
     instance (Literal l, Literal (ByNumber e), Ix e, Integral e) => AReduction (RedEnum XSAT l (ByNumber e) b)
 
-fullXSATToSat :: Literal l => XSAT l b -> SAT l b
-fullXSATToSat (XSAT cnf xnf) = case gaussJordan $ map lineUp xnf of
+xsatToSat :: Literal l => XSAT l b -> SAT l b
+xsatToSat (XSAT cnf xnf) = case gaussJordan $ map lineUp xnf of
     Nothing -> SAT [[]]
     Just xnf' -> SAT $ cnf ++ (fullXClauseToSAT =<< xnf')
 
@@ -119,7 +130,7 @@ fullXClauseToSAT (x:xs, b) = negativeWay ++ positiveWay
         positiveWay = (lit False x :) <$> fullXClauseToSAT (xs, not b)
 
 lineUp :: Literal l => [l] -> ([Variable l], Bool)
-lineUp l = (oddTimes $ map unsign l , foldl xor False $ map isPositive l)
+lineUp l = (oddTimes $ map unsign l , lxor $ map isPositive l)
 
 gaussJordan :: Ord v => [([v], Bool)] -> Maybe [([v], Bool)]
 gaussJordan l = jordan <$> gauss l
@@ -171,9 +182,8 @@ hasElement x (a:as,_)
 -- | Only works on ordered lists without doublicates. See 
 --   [Wikipedia: symmetric difference](https://en.wikipedia.org/wiki/Symmetric_difference) 
 --   for further information.
---   
 symmetricDifference :: Ord v => ([v], Bool) -> ([v], Bool) -> ([v], Bool)
-symmetricDifference (xs,xb) (ys,yb) = (symmetricDifference' xs ys, xor xb yb)
+symmetricDifference (xs,xb) (ys,yb) = (symmetricDifference' xs ys, xb ++* yb)
     where
         symmetricDifference' [] ys = ys
         symmetricDifference' xs [] = xs

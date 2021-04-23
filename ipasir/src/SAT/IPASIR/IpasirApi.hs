@@ -16,8 +16,9 @@ import SAT.IPASIR.Solver
     , incrementalSolution
     , liftSolverMonad
     )
-import SAT.IPASIR.SAT (LBool(..), enumToLBool, SAT(..))
+import SAT.IPASIR.SAT (SAT(..))
 import SAT.IPASIR.Literals (ByNumber(..))
+import SAT.IPASIR.LBool (LBool(..), enumToLBool)
 
 type IDType = Word
 type Var    = CInt

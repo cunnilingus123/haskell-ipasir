@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 
+{-# LANGUAGE UndecidableInstances #-}
 module SAT.IPASIR.Formula where
   {-  ( Formula
     , RFormula
@@ -47,9 +48,12 @@ module SAT.IPASIR.Formula where
     , litOfAnd
     , litOfOr
     , litOfXor
-    ) -}   
+    ) 
+-}
 
 import Data.Maybe (fromMaybe)
+import Data.Function (on)
+import Data.Proxy (Proxy(Proxy))
 import Data.List (partition, uncons)
 import Data.Map (Map, filterWithKey, mapKeys, (!?))
 import Data.String (IsString(..))
@@ -63,48 +67,10 @@ import SAT.IPASIR.Literals -- (Literal(Variable, HelperVariable, isPositive, uns
 import SAT.IPASIR.LBool (LBool(..), lnot, land, lor, lxor)
 import SAT.IPASIR.ComplexityProblem ( AReduction(..), Reduction(..), NPProblem(..), AssumingProblem(..), ComplexityProblem(..) )
 import SAT.IPASIR.Printing (Printer(..))
+import SAT.IPASIR.XSAT ( XSAT )
 
-newtype CSATLit v b = CSATLit (Formula v)
-    deriving (Show, Eq)
-
-instance Bifunctor CSATLit where
-    first  f (CSATLit formula) = CSATLit $ fmap f formula
-    second _ (CSATLit formula) = CSATLit formula
-
-instance Ord v => ComplexityProblem (CSATLit v b) where
-    type Solution (CSATLit v b) = Map v b
-
-instance Ord v => AssumingProblem (CSATLit v b) where
-    type Conflict   (CSATLit v b) = [v]
-    type Assumption (CSATLit v b) = Lit v
-
-instance (Ord v) => NPProblem (CSATLit v LBool) where
-    checkModel m (CSATLit f) = LTrue == go m f
-        where
-            go m (Var v)  = fromMaybe LUndef $ m !? v
-            go _ No       = LFalse
-            go _ Yes      = LTrue
-            go m (Not f) = lnot $ go m f
-            go m (All l) = foldl land LTrue  $ map (go m) l
-            go m (Any l) = foldl lor  LFalse $ map (go m) l
-            go m (Odd l) = foldl lxor LFalse $ map (go m) l
-
-newtype CSatToXSatRed csat = CSatToXSatRed Int
-
-type Var v = Either Int v
-
-instance (Ord v) => Reduction (CSatToXSatRed (CSATLit v b)) where
-    type CPFrom (CSatToXSatRed (CSATLit v b)) = CSATLit v b
-    type CPTo   (CSatToXSatRed (CSATLit v b)) = XSATLit (Var v) b
-    newReduction    = CSatToXSatRed 0
-    parseSolution _ = mapKeys (\(Right x) -> x) . filterWithKey (\k _ -> isRight k)
-    parseEncoding (CSatToXSatRed i) (CSATLit formula) = (xsat, CSatToXSatRed i')
-        where
-            (i', xsat) = formulaToXSAT formula i
-
-instance (Ord v) => AReduction (CSatToXSatRed (CSATLit v b)) where
-    parseAssumption _ a = pure $ Right <$> a
-    parseConflict _     = map (\(Right x) -> x) . filter isRight
+newtype CSAT l b = CSAT (Formula (Variable l))
+    deriving (Functor)
 
 -- | A Formula that combines @Normal@, @Reduced@ and @Demorganed@ formulas
 data Formula v
@@ -124,6 +90,26 @@ isYes _   = False
 isNo :: Formula v -> Bool
 isNo No = True
 isNo _  = False
+
+
+newtype CSatToXSatRed csat = CSatToXSatRed Int
+
+type Var v = Either Int v
+
+instance (Literal l, Literal (HelperLiteral l) ) => Reduction (CSatToXSatRed (CSAT l b)) where
+    type CPFrom (CSatToXSatRed (CSAT l b)) = CSAT l b
+    type CPTo   (CSatToXSatRed (CSAT l b)) = XSAT (HelperLiteral l) b
+    newReduction    = CSatToXSatRed 0
+    parseSolution _ = undefined -- mapKeys (\(Right x) -> x) . filterWithKey (\k _ -> isRight k)
+    parseEncoding (CSatToXSatRed i) (CSAT formula) = (xsat, CSatToXSatRed i')
+        where
+            (i', xsat) = formulaToXSAT formula i
+
+instance (Literal l, Literal (HelperLiteral l)) => AReduction (CSatToXSatRed (CSAT l b)) where
+    parseAssumption _ a = undefined -- pure $ Right <$> a
+    parseConflict _     = undefined -- map (\(Right x) -> x) . filter isRight
+
+formulaToXSAT = undefined
 
 instance Show v => Show (Formula v) where
     show f = show $ toPrinter f
@@ -155,6 +141,47 @@ instance Read v => Read (Formula v) where
             fromPrinter (Roundup "NOT ALL" l) = Not $ All $ map fromPrinter l
             fromPrinter (Roundup "NONE" l)    = Not $ Any $ map fromPrinter l
             fromPrinter (Roundup "EVEN" l)    = Not $ Odd $ map fromPrinter l
+
+instance Show (Variable l) => Show (CSAT l b) where
+    show (CSAT f) = show f
+
+instance Eq (Variable l) => Eq (CSAT l b) where
+    CSAT f1 == CSAT f2 = f1 == f2
+
+instance Literal l => ComplexityProblem (CSAT l b) where
+    type Solution (CSAT l b) = Allocation l b
+
+instance Literal l => AssumingProblem (CSAT l b) where
+    type Conflict   (CSAT l b) = [Variable l]
+    type Assumption (CSAT l b) = l
+
+instance Literal l => NPProblem (CSAT l LBool) where
+    checkModel m (CSAT f) = LTrue == go m f
+        where
+            go :: Allocation l LBool -> Formula (Variable l) -> LBool
+            go m (Var v)  = fromMaybe LUndef $ readAllocation (Proxy :: Proxy l) m v
+            go _ No       = LFalse
+            go _ Yes      = LTrue
+            go m (Not f) = lnot $ go m f
+            go m (All l) = land $ map (go m) l
+            go m (Any l) = lor  $ map (go m) l
+            go m (Odd l) = lxor $ map (go m) l
+
+{-
+instance Bifunctor CSATLit where
+    first  f (CSATLit formula) = CSATLit $ fmap f formula
+    second _ (CSATLit formula) = CSATLit formula
+
+
+type Var v = Either Int v
+
+
+
+
+
+
+
+
 
 
 instance Applicative Formula where
@@ -357,3 +384,5 @@ unLit :: Literal l => l -> Formula (Variable l)
 unLit l
     | isPositive l = Var $ unsign l
     | otherwise    = Not $ Var $ unsign l
+
+-}
