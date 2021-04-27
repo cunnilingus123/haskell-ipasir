@@ -59,10 +59,10 @@ instance (Literal l) => AssumingProblem (SAT l b) where
 
 instance (Literal l, BoolLike b) => Solutiontransform (SAT l b) where
     solutionToEncoding    sol = SAT             [intoLit b v        | (v,b) <- assocs (Proxy :: Proxy l) sol ]
-    negSolutionToEncoding sol = SAT $ transpose [intoLit (lnot b) v | (v,b) <- assocs (Proxy :: Proxy l) sol ]
+    negSolutionToEncoding sol = SAT $ pure $ concat [intoLit (lnot b) v | (v,b) <- assocs (Proxy :: Proxy l) sol ]
 
 intoLit :: (Literal l, BoolLike b) => b -> Variable l -> [l]
-intoLit b v = [ lit True  v | b == ltrue  ] ++ [ lit False v | b == lfalse ]
+intoLit b v = [ lit True  v | b == ltrue ] ++ [ lit False v | b == lfalse ]
 
 deriving via (BoolLBoolDerive SAT l)
     instance (Literal l) =>  Reduction (RedBoolLBool (SAT l))

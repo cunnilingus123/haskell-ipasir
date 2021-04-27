@@ -23,8 +23,9 @@
 
 module SAT.IPASIR.XSAT 
     ( XSAT(..)
-    , SatToXSatRed
-    , XSatToSatRed
+    , SatToXSatRed(..)
+    , XSatToSatRed(..)
+    , lineUp
     ) where
 
 import Data.Ix (Ix)
@@ -34,7 +35,7 @@ import Data.List (partition, sort, minimumBy)
 
 import SAT.IPASIR.SAT 
 import SAT.IPASIR.LBool (BoolLike(boolToBoolLike, (++*), lxor))
-import SAT.IPASIR.Literals (Literal(Allocation, Variable, lit, unsign, isPositive), ByNumber, litSatisfied)
+import SAT.IPASIR.Literals (Literal(Allocation, Variable, lit, unsign, isPositive), ByNumber, litSatisfied, isNegative)
 import SAT.IPASIR.Foldable (foldl2D, foldr2D)
 import Data.Bifoldable (Bifoldable(bifoldl, bifoldr))
 
@@ -43,8 +44,10 @@ data XSAT l b = XSAT [[l]] [[l]]
     deriving (Show, Read)
 
 data SatToXSatRed sat  = SatToXSatRed
+    deriving (Show, Eq)
 
 data XSatToSatRed xsat = XSatToSatRed
+    deriving (Show, Eq)
 
 satToXsat :: SAT e b -> XSAT e b
 satToXsat (SAT f) = XSAT f []
@@ -130,7 +133,7 @@ fullXClauseToSAT (x:xs, b) = negativeWay ++ positiveWay
         positiveWay = (lit False x :) <$> fullXClauseToSAT (xs, not b)
 
 lineUp :: Literal l => [l] -> ([Variable l], Bool)
-lineUp l = (oddTimes $ map unsign l , lxor $ map isPositive l)
+lineUp l = (oddTimes $ map unsign l , not $ lxor $ map isNegative l)
 
 gaussJordan :: Ord v => [([v], Bool)] -> Maybe [([v], Bool)]
 gaussJordan l = jordan <$> gauss l
@@ -144,6 +147,7 @@ jordan (x:xs) = go x xs : jordan xs
             | a == b    = go (symmetricDifference x y) ys
             | a <  b    = first (a:) $ go (as,bool) gauss
             | otherwise = go x ys
+        go x _ = x
 
 gauss :: Ord v => [([v], Bool)] -> Maybe [([v], Bool)]
 gauss l

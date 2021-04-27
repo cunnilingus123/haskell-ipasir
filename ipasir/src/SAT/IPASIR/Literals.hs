@@ -14,9 +14,15 @@ module SAT.IPASIR.Literals
     , integralToLit
     , litToIntegral
     , litSatisfied
+    , isNegative
     ) where
 
 import SAT.IPASIR.VarCache
+    ( VarCacheIntegral(VarCacheIntegral)
+    , VarCacheOrd(VarCacheOrd)
+    , GeneralVarCache(..)
+    , VarCache(varToIntegral, integralToVar, mapArrayOnMap) 
+    )
 import SAT.IPASIR.LBool (BoolLike(boolToBoolLike))
 
 import Data.Bifunctor (Bifunctor (bimap, first))
@@ -101,12 +107,15 @@ instance (Enum a, Num a, Ord a, Ix a, Integral a) => Literal (ByNumber a) where
     createHelperPool _ m = [succ m..]
     unsafeReadAllocation _ a (ByNumber i) = a Data.Array.! i
     readAllocation p a (ByNumber i)
-        | inRange (Data.Array.bounds a) i = Nothing
-        | otherwise = Just $ unsafeReadAllocation p a (ByNumber i)
+        | inRange (Data.Array.bounds a) i = Just $ unsafeReadAllocation p a (ByNumber i)
+        | otherwise = Nothing
     assocs _ = map (first ByNumber) . Data.Array.assocs
     makeVarCache _ = GeneralVarCache VarCacheIntegral
     arrayIntoAllocation _ cache arr = Data.Array.ixmap b fromIntegral arr
         where b = bimap fromIntegral fromIntegral $ Data.Array.bounds arr
+
+isNegative :: (Literal l) => l -> Bool
+isNegative = not . isPositive
 
 newtype ByNumber a = ByNumber a
     deriving (Eq, Ord, Functor, Enum, Ix)

@@ -1,4 +1,6 @@
-module SAT.IPASIR.Printing where
+module SAT.IPASIR.Printing
+    ( Printer (..)
+    ) where
 
 import Data.List (intercalate)
 import Data.Bifunctor (first)
