@@ -22,13 +22,12 @@ module SAT.IPASIR.SAT
 
 import Data.Ix (Ix(..))
 import Data.Proxy (Proxy(Proxy))
-import Data.List (transpose)
 import Data.Bifunctor (Bifunctor(bimap))
 import Data.Bifoldable (Bifoldable(bifoldl, bifoldr))
 
 import SAT.IPASIR.ComplexityProblem as Export
 import SAT.IPASIR.Literals (Literal(Allocation, Variable, lit, assocs), ByNumber, litSatisfied)
-import SAT.IPASIR.LBool (BoolLike(ltrue, lfalse, lnot))
+import SAT.IPASIR.LBool (BoolLike(ltrue, lfalse, lnot, land, lor), LBool(LTrue))
 import SAT.IPASIR.Foldable (foldl2D, foldr2D)
 
 -- | A representative of the 
@@ -51,14 +50,14 @@ instance (Literal l) => ComplexityProblem (SAT l b) where
     type Solution (SAT l b) = Allocation l b
 
 instance (Literal l, BoolLike b) => NPProblem (SAT l b) where
-    checkModel sol (SAT sat) = all (any (litSatisfied sol)) sat
+    checkModel sol (SAT sat) = (LTrue ==) $ land $ map (lor . map (litSatisfied sol)) sat
 
 instance (Literal l) => AssumingProblem (SAT l b) where
     type Conflict   (SAT l b) = [Variable l]
     type Assumption (SAT l b) = l
 
 instance (Literal l, BoolLike b) => Solutiontransform (SAT l b) where
-    solutionToEncoding    sol = SAT             [intoLit b v        | (v,b) <- assocs (Proxy :: Proxy l) sol ]
+    solutionToEncoding    sol = SAT                 [intoLit b v        | (v,b) <- assocs (Proxy :: Proxy l) sol ]
     negSolutionToEncoding sol = SAT $ pure $ concat [intoLit (lnot b) v | (v,b) <- assocs (Proxy :: Proxy l) sol ]
 
 intoLit :: (Literal l, BoolLike b) => b -> Variable l -> [l]

@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 module SAT.IPASIR.LBool
     ( LBool (..)
     , BoolLike (..)
@@ -5,6 +7,8 @@ module SAT.IPASIR.LBool
     ) where
 
 import Data.Bits (xor)
+import Control.Applicative (liftA2)
+import Control.Monad (sequence)
 
 -- | A solution for a single variable.
 -- @Just a@ indicates that the variable is @a@ in the solution
@@ -35,11 +39,11 @@ class Eq b => BoolLike b where
     (<->*) :: b -> b -> b
     x <->* y = lnot $ x ++* y
 
-    land   :: Foldable t => t b -> b
+    land   :: Traversable t => t b -> b
     land = foldl (&&*) ltrue
-    lor    :: Foldable t => t b -> b
+    lor    :: Traversable t => t b -> b
     lor  = foldl (||*) lfalse
-    lxor   :: Foldable t => t b -> b
+    lxor   :: Traversable t => t b -> b
     lxor = foldl (++*) lfalse
     boolToBoolLike :: Bool -> b
     boolToBoolLike b = if b then ltrue else lfalse
@@ -81,6 +85,21 @@ instance BoolLike Bool where
     lor    = or
     boolToBoolLike = id
 
+instance BoolLike (Maybe Bool) where
+    ltrue  = Just True
+    lfalse = Just False
+    lnot   = fmap not
+    Just False &&* _  = Just False
+    _ &&* Just False  = Just False
+    x &&* y = liftA2 (&&*) x y
+    Just True ||* _  = Just True
+    _ ||* Just True  = Just True
+    x ||* y = liftA2 (||*) x y
+    (++*)  = liftA2 (/=)
+    (<->*) = liftA2 (==)
+    lxor = fmap lxor . sequence
+    boolToBoolLike = Just
+
 enumToLBool :: (Ord a, Num a) => a -> LBool
 enumToLBool i = case compare i 0 of
     GT -> LTrue
@@ -88,8 +107,8 @@ enumToLBool i = case compare i 0 of
     _  -> LFalse
 
 instance Show LBool where
-    show LTrue  = "1"
-    show LFalse = "0"
+    show LTrue  = "+"
+    show LFalse = "-"
     show LUndef = "?"
 
 instance Enum LBool where
@@ -102,6 +121,6 @@ instance Enum LBool where
         | otherwise = LTrue
 
 instance Read LBool where
-    readsPrec prec ('1':str) = [(LTrue ,str)]
-    readsPrec prec ('0':str) = [(LFalse,str)]
+    readsPrec prec ('+':str) = [(LTrue ,str)]
+    readsPrec prec ('-':str) = [(LFalse,str)]
     readsPrec prec ( _ :str) = [(LUndef,str)]

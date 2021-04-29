@@ -11,12 +11,13 @@ import Data.Reflection
 import Data.List.Split
 import qualified Data.Map
 import qualified Data.Array
-import Data.Bifunctor (second)
+import Data.Bifunctor (first, second)
 import Test.QuickCheck
 import Foreign.C.Types
 import Control.Applicative ( Applicative(liftA2) ) 
 import Data.List.Ordered (nubSort)
 import Data.Bifoldable
+import Data.Word
 
 import Test.Tasty
 import Test.Tasty.QuickCheck
@@ -25,22 +26,26 @@ import SAT.IPASIR.Formula
 import SAT.IPASIR.SAT
 import SAT.IPASIR.XSAT
 import SAT.IPASIR.LBool
-import SAT.IPASIR.Literals ( Lit, ByNumber(ByNumber), Literal(unsign, lit), litSatisfied )
+import SAT.IPASIR.Literals ( Lit(..), ByNumber(ByNumber), Literal(unsign, lit), litSatisfied )
 import SAT.IPASIR.ComplexityProblem
+
+import Debug.Trace
 
 main :: IO ()
 main = defaultMain testTree
 
 testTree :: TestTree
 testTree = testGroup "Testing CP" 
-    [ 
+    [ checkSolutiontransform
+    , checkReductions (Proxy :: Proxy  SAT) SatToXSatRed
+    , checkReductions (Proxy :: Proxy XSAT) XSatToSatRed
     ]
 
 numVars = 50
 
 instance Arbitrary (SAT (ByNumber Int) b) where
     arbitrary = SAT <$> listOf (listOf arbitrary)
-    shrink = shrink'
+    shrink (SAT cnf) = SAT <$> shrink' cnf
 
 instance (Arbitrary v, Ord v) => Arbitrary (Lit v) where
     arbitrary = liftA2 lit arbitrary arbitrary
@@ -52,15 +57,17 @@ instance Arbitrary (ByNumber Int) where
 
 instance (Arbitrary v, Ord v) => Arbitrary (SAT (Lit v) b) where
     arbitrary = SAT <$> listOf (listOf arbitrary)
-    shrink = shrink'
+    shrink (SAT cnf) = SAT <$> shrink' cnf
 
 instance Arbitrary b => Arbitrary (XSAT (ByNumber Int) b) where
     arbitrary = liftA2 XSAT (listOf (listOf arbitrary)) 
-                            (listOf (take 7 <$> listOf arbitrary))
+                            (listOf (take 5 <$> listOf arbitrary))
+    shrink (XSAT cnf xnf) = [XSAT cnf' xnf | cnf' <- shrink' cnf] ++ [XSAT cnf xnf' | xnf' <- shrink' xnf]
 
 instance (Arbitrary v, Ord v) => Arbitrary (XSAT (Lit v) b) where
     arbitrary = liftA2 XSAT (listOf (listOf arbitrary)) 
-                            (listOf (take 7 <$> listOf arbitrary))
+                            (take 16 <$> listOf (take 8 <$> listOf arbitrary))
+    shrink (XSAT cnf xnf) = [XSAT cnf' xnf | cnf' <- shrink' cnf] ++ [XSAT cnf xnf' | xnf' <- shrink' xnf]
 
 instance Arbitrary LBool where
     arbitrary = elements [LFalse, LUndef, LTrue]
@@ -69,11 +76,11 @@ instance Arbitrary LBool where
 instance Arbitrary b => Arbitrary (Data.Array.Array Int b) where
     arbitrary = Data.Array.listArray (1,numVars) <$> infiniteList
 
-shrink' :: SAT e b -> [SAT e b]
-shrink' (SAT cnf)
-    =  [SAT cnf' | length cnf > 20, cnf' <- chunksOf 20 cnf]
-    ++ [SAT $ tail cnf | not $ null cnf]
-    ++ [SAT $ map safeTail cnf | not $ null $ concat cnf]
+--shrink' :: SAT e b -> [SAT e b]
+shrink' cnf
+    =  [cnf' | length cnf > 20, cnf' <- chunksOf 20 cnf]
+    ++ [tail cnf | not $ null cnf]
+    ++ [map safeTail cnf | not $ null $ concat cnf]
     where
         safeTail [] = []
         safeTail (_:xs) = xs
@@ -119,8 +126,8 @@ checkReduction s reduction = testProperty s $ \c assignment -> checkModel (parse
 checkReductions :: forall (r :: * -> *) (cp :: * -> * -> *) r1 r2 r3 r4.
     ( r1 ~ r (cp (ByNumber Int) Bool)
     , r2 ~ r (cp (ByNumber Int) LBool)
-    , r3 ~ r (cp (Lit Char) Bool)
-    , r4 ~ r (cp (Lit Char) LBool)
+    , r3 ~ r (cp (Lit Word8) Bool)
+    , r4 ~ r (cp (Lit Word8) LBool)
     , Reduction r1
     , Reduction r2
     , Reduction r3
@@ -153,11 +160,31 @@ checkReductions :: forall (r :: * -> *) (cp :: * -> * -> *) r1 r2 r3 r4.
     , NPProblem (CPTo r2)
     , NPProblem (CPTo r3)
     , NPProblem (CPTo r4)
-    ) => Proxy cp -> (forall l b. r (cp l b)) ->  -> TestTree
+    ) => Proxy cp -> (forall l b. r (cp l b)) -> TestTree
 checkReductions _ f = testGroup "CP is satisfied <=> Reduced CP is satisfied"
-    [ checkReduction "Int Bool"  (f :: r1)
+    [ checkReduction "Int  Bool" (f :: r1)
     , checkReduction "Int LBool" (f :: r2)
-    , checkReduction "(Lit Char) Bool"  (f :: r3)
+    , checkReduction "(Lit Char)  Bool" (f :: r3)
     , checkReduction "(Lit Char) LBool" (f :: r4)
     ]
+
+model :: Data.Array.Array Int LBool
+model = Data.Array.array (1,2) [(1, LTrue), (2, LUndef)]
+enc :: XSAT (ByNumber Int) LBool
+enc   = XSAT [] [[1,2]]
+
+
+cm sol (XSAT cnf xnf) = map (map (litSatisfied sol)) xnf
+
+xsat :: Gen (XSAT (Lit Word8) Bool)
+xsat = arbitrary
+
+tt :: IO Bool
+tt = generate $ liftA2 checkModel arbitrary xsat
+
+--sat :: IO Bool
+sat = generate $ do
+ --   ass <- arbitrary
+    enc <- xsat
+    return $ first (const enc) $ parseEncoding (XSatToSatRed :: XSatToSatRed (XSAT (Lit Word8) Bool)) enc
 

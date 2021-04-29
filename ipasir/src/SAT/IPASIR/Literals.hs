@@ -23,7 +23,7 @@ import SAT.IPASIR.VarCache
     , GeneralVarCache(..)
     , VarCache(varToIntegral, integralToVar, mapArrayOnMap) 
     )
-import SAT.IPASIR.LBool (BoolLike(boolToBoolLike))
+import SAT.IPASIR.LBool (BoolLike(ltrue, lfalse, boolToBoolLike), LBool(..))
 
 import Data.Bifunctor (Bifunctor (bimap, first))
 import Data.Proxy (Proxy(Proxy))
@@ -68,10 +68,15 @@ litToIntegral cache l
     | otherwise    = negate <$> i
     where i = varToIntegral cache (unsign l)
 
-litSatisfied :: forall l b . (Literal l, BoolLike b) => Allocation l b -> l -> Bool
-litSatisfied allo l = readAllocation (Proxy :: Proxy l) allo (unsign l) == sign' l
+litSatisfied :: forall l b . (Literal l, BoolLike b) => Allocation l b -> l -> LBool
+litSatisfied allo l
+    | Nothing <- a= LUndef
+    | b == ltrue  = boolToBoolLike $ isPositive l
+    | b == lfalse = boolToBoolLike $ not $ isPositive l
+    | otherwise   = LUndef
     where
-        sign'          = Just . boolToBoolLike . isPositive
+        a = readAllocation (Proxy :: Proxy l) allo (unsign l)
+        Just b = a
 
 instance Ord a => Literal (Lit a) where
     type Variable (Lit a) = a

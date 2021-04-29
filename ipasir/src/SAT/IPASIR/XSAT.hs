@@ -34,7 +34,7 @@ import Data.Bifunctor (Bifunctor(first, second))
 import Data.List (partition, sort, minimumBy)
 
 import SAT.IPASIR.SAT 
-import SAT.IPASIR.LBool (BoolLike(boolToBoolLike, (++*), lxor))
+import SAT.IPASIR.LBool (BoolLike((++*), land, lxor), LBool(LTrue))
 import SAT.IPASIR.Literals (Literal(Allocation, Variable, lit, unsign, isPositive), ByNumber, litSatisfied, isNegative)
 import SAT.IPASIR.Foldable (foldl2D, foldr2D)
 import Data.Bifoldable (Bifoldable(bifoldl, bifoldr))
@@ -56,7 +56,8 @@ instance (Literal l) => ComplexityProblem (XSAT l b) where
     type Solution (XSAT l b) = Allocation l b
 
 instance (Literal l, BoolLike b) => NPProblem (XSAT l b) where
-    checkModel sol (XSAT cnf xnf) = checkModel sol (SAT cnf) && all (lxor . map (litSatisfied sol)) xnf
+    checkModel sol (XSAT cnf xnf) = checkModel sol (SAT cnf)
+                                    && LTrue == land (map (lxor . map (litSatisfied sol)) xnf)
 
 instance (Literal l, BoolLike b) => Solutiontransform (XSAT l b) where
     solutionToEncoding    = satToXsat . solutionToEncoding 
